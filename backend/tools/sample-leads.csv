@@ -1,0 +1,3 @@
+firstName,lastName,email,mobileNumber,leadSource,leadSubSource,locationCity,locationState,leadStatus,company,title,industry
+John,Doe,john.doe@example.com,+91-9000000001,Website,Contact Form,Bengaluru,Karnataka,New,Acme Inc,Developer,Technology
+Jane,Smith,jane.smith@example.com,+91-9000000002,Facebook,Ad Campaign,Mumbai,Maharashtra,Interested,Globex,Analyst,Finance
