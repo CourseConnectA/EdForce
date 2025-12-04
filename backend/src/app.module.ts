@@ -16,11 +16,12 @@ import { LeadsModule } from './modules/leads/leads.module';
 import { OpportunitiesModule } from './modules/opportunities/opportunities.module';
 import { CampaignsModule } from './modules/campaigns/campaigns.module';
 // import { WorkflowsModule } from './modules/workflows/workflows.module';
-import { MarketingAutomationModule } from './modules/marketing-automation/marketing-automation.module';
+// Marketing and WhatsApp modules disabled - feature coming soon
+// import { MarketingAutomationModule } from './modules/marketing-automation/marketing-automation.module';
 import { DatabaseModule } from './database/database.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { WhatsappModule } from './modules/whatsapp/whatsapp.module';
+// import { WhatsappModule } from './modules/whatsapp/whatsapp.module';
 import { UsersModule } from './modules/users/users.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { CenterConfigModule } from './modules/center-config/center-config.module';
@@ -73,7 +74,7 @@ import { CallsModule } from './modules/calls/calls.module';
         // Default secret for local dev if none provided
         secret: configService.get('JWT_SECRET') || 'dev-secret-change-me',
         signOptions: {
-          expiresIn: configService.get('JWT_EXPIRES_IN') || '15m',
+          expiresIn: configService.get('JWT_EXPIRES_IN') || '24h',
         },
       }),
       inject: [ConfigService],
@@ -111,10 +112,10 @@ import { CallsModule } from './modules/calls/calls.module';
     OpportunitiesModule,
     CampaignsModule,
     // WorkflowsModule, // replaced
-    WhatsappModule,
+    // WhatsappModule, // disabled - coming soon
     UsersModule,
     DashboardModule,
-    MarketingAutomationModule,
+    // MarketingAutomationModule, // disabled - coming soon
     CenterConfigModule,
     RoutingRulesModule,
     ReportsModule,

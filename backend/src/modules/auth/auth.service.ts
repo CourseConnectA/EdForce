@@ -51,7 +51,7 @@ export class AuthService {
     };
 
     const accessToken = this.jwtService.sign(payload, {
-      expiresIn: this.configService.get('JWT_EXPIRES_IN') || '15m',
+      expiresIn: this.configService.get('JWT_EXPIRES_IN') || '24h',
     });
 
     const refreshToken = this.jwtService.sign(payload, {
@@ -101,7 +101,7 @@ export class AuthService {
       };
 
       const accessToken = this.jwtService.sign(newPayload, {
-        expiresIn: this.configService.get('JWT_EXPIRES_IN') || '15m',
+        expiresIn: this.configService.get('JWT_EXPIRES_IN') || '24h',
       });
 
       return { accessToken };

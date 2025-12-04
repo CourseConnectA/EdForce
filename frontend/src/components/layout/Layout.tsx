@@ -41,7 +41,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               flexGrow: 1,
               px: 1.5,
               pt: 0.5, // Reduced gap between header and content
-              pb: 'calc(80px + env(safe-area-inset-bottom, 16px))', // Precise padding for bottom nav
+              pb: 'calc(20px + env(safe-area-inset-bottom, 16px))', // Precise padding for bottom nav
               overflowY: 'auto',
             }}
           >

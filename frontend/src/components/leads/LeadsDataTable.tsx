@@ -55,6 +55,10 @@ import {
   Download as DownloadIcon,
   Phone as PhoneIcon,
   Close as CloseIcon,
+  WhatsApp as WhatsAppIcon,
+  ViewColumn as ViewColumnIcon,
+  ArrowForwardIosOutlined as ArrowForwardIosOutlinedIcon,
+  ArrowBackIosOutlined as ArrowBackIosOutlinedIcon,
 } from '@mui/icons-material';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState, AppDispatch } from '../../store/store';
@@ -71,7 +75,6 @@ import {
 import { Lead, LeadView } from '../../services/leadsService';
 import leadsService from '../../services/leadsService';
 import { GLOBAL_LEAD_STATUSES } from '../../constants/leadStatus';
-import PageHeader from '@/components/common/PageHeader';
 import callsService from '@/services/callsService';
 import CallDispositionModal from '@/components/common/CallDispositionModal';
 import { Capacitor } from '@capacitor/core';
@@ -211,7 +214,7 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
   const [saveViewDialogOpen, setSaveViewDialogOpen] = useState(false);
   const [newViewName, setNewViewName] = useState('');
   const [columnsDialogOpen, setColumnsDialogOpen] = useState(false);
-  const DEFAULT_COLUMNS_CM_CN = ['name','company','leadStatus','leadSource','lastCallDisposition','lastCallNotes','estimatedValue','expectedCloseDate','actions'];
+  const DEFAULT_COLUMNS_CM_CN = ['name','company','leadStatus','leadSource','lastCallDisposition','lastCallNotes','actions'];
   const DEFAULT_COLUMNS_ADMIN = ['referenceNo','name','owner','counselor','leadStatus','lastCallDisposition','lastCallNotes','nextFollowUpAt','actions'];
   const DEFAULT_COLUMNS = isSuperAdmin ? DEFAULT_COLUMNS_ADMIN : DEFAULT_COLUMNS_CM_CN;
   const [selectedColumns, setSelectedColumns] = useState<string[]>(DEFAULT_COLUMNS);
@@ -252,24 +255,51 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
   } | null>(null);
   const [callGuardOpen, setCallGuardOpen] = useState(false);
 
-  // Initialize pagination from localStorage
+  // Track if pagination is ready for fetching (initialization complete)
+  const [paginationReady, setPaginationReady] = useState(false);
+
+  // Initialize pagination from localStorage and handle mobile limit adjustment
   useEffect(() => {
+    // Only run once on mount
+    let targetLimit = limit;
+    
     try {
       const saved = JSON.parse(localStorage.getItem('leads.pagination') || 'null');
       if (saved && typeof saved === 'object') {
         if (typeof saved.page === 'number') dispatch(setPage(saved.page));
-        if (typeof saved.limit === 'number') dispatch(setLimit(saved.limit));
+        if (typeof saved.limit === 'number') targetLimit = saved.limit;
       }
     } catch {}
+    
+    // If mobile and limit would be > 6, set to 6
+    if (isMobile && targetLimit > 6) {
+      dispatch(setLimit(6));
+    } else if (targetLimit !== limit) {
+      dispatch(setLimit(targetLimit));
+    }
+    
+    // Mark pagination as ready after a microtask to ensure state updates are applied
+    Promise.resolve().then(() => {
+      setPaginationReady(true);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Persist pagination to localStorage
+  // Persist pagination to localStorage (only after ready)
   useEffect(() => {
+    if (!paginationReady) return;
     try {
       localStorage.setItem('leads.pagination', JSON.stringify({ page, limit }));
     } catch {}
-  }, [page, limit]);
+  }, [page, limit, paginationReady]);
+
+  // Handle mobile limit adjustment when switching between mobile/desktop
+  useEffect(() => {
+    if (!paginationReady) return;
+    if (isMobile && limit > 6) {
+      dispatch(setLimit(6));
+    }
+  }, [isMobile, paginationReady, limit, dispatch]);
 
   // Listen for call-completed events from native dialer service (started in App.tsx)
   useEffect(() => {
@@ -340,6 +370,10 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
 
   // Fetch leads when component mounts or filters change
   useEffect(() => {
+    // Skip fetch until pagination is ready (initialization complete)
+    if (!paginationReady) {
+      return;
+    }
     const params = {
       page,
       limit,
@@ -357,7 +391,7 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
       sortOrder: sortModel[0]?.sort || undefined,
     };
     dispatch(fetchLeads(params));
-  }, [dispatch, page, limit, searchTerm, statusFilter, counselorFilter, importantOnly, leadSourceFilter, industryFilter, cityFilter, stateFilter, createdAfter, createdBefore, sortModel]);
+  }, [dispatch, page, limit, searchTerm, statusFilter, counselorFilter, importantOnly, leadSourceFilter, industryFilter, cityFilter, stateFilter, createdAfter, createdBefore, sortModel, paginationReady]);
 
   // Load counselors list for center manager (for filter dropdown)
   useEffect(() => {
@@ -656,6 +690,22 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
     void callsService.initiateCall(phoneNumber, leadId);
   };
 
+  // Handle WhatsApp icon click
+  const handleWhatsAppClick = (phoneNumber: string) => {
+    if (!phoneNumber) return;
+    // Clean phone number - remove spaces, dashes, parentheses
+    let cleanNumber = phoneNumber.replace(/[\s\-\(\)]/g, '');
+    // Remove leading + if present, wa.me handles it
+    if (cleanNumber.startsWith('+')) {
+      cleanNumber = cleanNumber.substring(1);
+    }
+    // If number doesn't start with country code, assume India (+91)
+    if (!cleanNumber.startsWith('91') && cleanNumber.length === 10) {
+      cleanNumber = '91' + cleanNumber;
+    }
+    window.open(`https://wa.me/${cleanNumber}`, '_blank');
+  };
+
   // Handle actions menu
   const handleActionsClick = (event: React.MouseEvent<HTMLElement>, leadId: string) => {
     setAnchorEl(event.currentTarget);
@@ -903,10 +953,10 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
           <Box sx={{ display: 'flex', alignItems: 'center' }}>
             <Avatar 
               sx={{ 
-                mr: 2, 
+                mr: 1, 
                 width: 32, 
                 height: 32, 
-                bgcolor: 'secondary.main',
+                bgcolor: '#7EB1FD',
                 fontSize: '0.875rem'
               }}
             >
@@ -1080,17 +1130,27 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
       field: 'actions',
       type: 'actions',
       headerName: 'Actions',
-      width: 120,
+      width: 140,
       getActions: (params: GridRowParams) => {
         const lead = params.row as Lead;
-        const phoneNumber = lead.mobileNumber || lead.alternateNumber || lead.whatsappNumber || '';
+        const phoneNumber = lead.mobileNumber || lead.alternateNumber || '';
+        const whatsappNumber = lead.whatsappNumber || lead.mobileNumber || '';
         const showCallAction = !!phoneNumber && !isSuperAdmin;
+        const showWhatsAppAction = !!whatsappNumber;
         return [
           showCallAction ? (
             <GridActionsCellItem
-              icon={<PhoneIcon />}
+              icon={<PhoneIcon sx={{ color: 'text.secondary' }} />}
               label="Call"
               onClick={() => handleCallClick(params.id as string, phoneNumber)}
+              showInMenu={false}
+            />
+          ) : null,
+          showWhatsAppAction ? (
+            <GridActionsCellItem
+              icon={<WhatsAppIcon sx={{ color: '#25D366' }} />}
+              label="WhatsApp"
+              onClick={() => handleWhatsAppClick(whatsappNumber)}
               showInMenu={false}
             />
           ) : null,
@@ -1222,7 +1282,7 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
   return (
     <Box>
       {/* Header */}
-      <Box sx={{ mb: 2 }}>
+      <Box sx={{ mb: 1 }}>
         {viewError && (
           <Alert severity="error" sx={{ mb: 1 }} onClose={() => setViewError(null)}>
             {viewError}
@@ -1231,74 +1291,117 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
         
         {/* Mobile-optimized header */}
         {isMobile ? (
-          <Box>
-            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}>
-              <Typography variant="h6" sx={{ fontWeight: 700 }}>Leads</Typography>
-              <Stack direction="row" spacing={0.5}>
-                <Button 
-                  variant="contained" 
-                  size="small" 
-                  startIcon={<AddIcon />}
-                  onClick={onCreateLead} 
-                  disabled={!canCreate}
-                >
-                  New
-                </Button>
+          <Box sx={{ mb: 2 }}>
+            {/* Title row with Views dropdown and Filters */}
+            <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
+              <Box>
+                <Typography sx={{ fontWeight: 700, fontSize: '2.25rem', lineHeight: 1.1, color: '#111827', letterSpacing: '-0.02em' }}>Leads</Typography>
+                <Typography sx={{ fontSize: '0.9rem', color: '#6b7280', mt: 0.5 }}>{isPseudoEmpty ? 0 : total} Items</Typography>
+              </Box>
+              <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 0.5 }}>
+                <FormControl size="small">
+                  <Select 
+                    value={selectedViewId} 
+                    onChange={(e) => handleViewChange(String(e.target.value))}
+                    displayEmpty
+                    sx={{ 
+                      '& .MuiSelect-select': { 
+                        py: 0.875, 
+                        px: 1.5,
+                        fontSize: '0.875rem',
+                        color: '#374151',
+                        fontWeight: 500,
+                      },
+                      borderRadius: '8px',
+                      bgcolor: 'transparent',
+                      minWidth: 85,
+                      '& .MuiOutlinedInput-notchedOutline': {
+                        borderColor: '#9ca3af',
+                      },
+                      '&:hover .MuiOutlinedInput-notchedOutline': {
+                        borderColor: '#9ca3af',
+                      },
+                    }}
+                  >
+                    <MenuItem value="">Views</MenuItem>
+                    {views.map(v => (
+                      <MenuItem key={v.id} value={v.id}>
+                        {v.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                <Badge color="primary" badgeContent={activeFilterCount || 0} overlap="circular">
+                  <Button 
+                    variant="outlined" 
+                    size="small" 
+                    startIcon={<TuneIcon sx={{ fontSize: '1rem' }} />}
+                    onClick={() => setFilterDrawerOpen(true)} 
+                    sx={{ 
+                      borderColor: '#9ca3af',
+                      bgcolor: 'transparent',
+                      color: '#374151',
+                      minWidth: 'auto',
+                      px: 1.5,
+                      py: 0.875,
+                      fontSize: '0.875rem',
+                      fontWeight: 500,
+                      borderRadius: '8px',
+                      textTransform: 'none',
+                      '&:hover': {
+                        borderColor: '#9ca3af',
+                        bgcolor: 'rgba(0,0,0,0.02)',
+                      },
+                    }}
+                  >
+                    Filters
+                  </Button>
+                </Badge>
               </Stack>
             </Stack>
-            <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
-              <TextField 
-                size="small" 
-                placeholder="Search..." 
-                value={searchInput} 
-                onChange={handleSearch}
-                sx={{ flex: 1 }}
-                InputProps={{ sx: { fontSize: '0.85rem' } }}
-              />
-              <Badge color="primary" badgeContent={activeFilterCount || 0} overlap="circular">
-                <IconButton 
-                  onClick={() => setFilterDrawerOpen(true)} 
-                  size="small" 
-                  sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1 }}
-                >
-                  <TuneIcon />
-                </IconButton>
-              </Badge>
-            </Stack>
-            {/* Active filter chips - mobile */}
-            {activeFilterCount > 0 && (
-              <Box sx={{ 
-                display: 'flex', 
-                gap: 0.5, 
-                flexWrap: 'wrap',
-                mb: 1,
-              }}>
-                {activeFilterChips.slice(0, 3).map(ch => (
-                  <Chip key={ch.key} label={ch.label} size="small" onDelete={ch.clear} sx={{ fontSize: '0.7rem', height: 24 }} />
-                ))}
-                {activeFilterChips.length > 3 && (
-                  <Chip 
-                    label={`+${activeFilterChips.length - 3} more`} 
-                    size="small" 
-                    onClick={() => setFilterDrawerOpen(true)}
-                    sx={{ fontSize: '0.7rem', height: 24 }}
-                  />
-                )}
-              </Box>
-            )}
           </Box>
         ) : (
-          /* Desktop header */
-          <PageHeader
-            title="Leads"
-            subtitle={`${isPseudoEmpty ? 0 : total} items`}
-            actions={(
-              <>
-                <TextField size="small" placeholder="Search leads…" value={searchInput} onChange={handleSearch} />
-                <FormControl size="small" sx={{ minWidth: 180 }}>
-                  <InputLabel>Views</InputLabel>
-                  <Select value={selectedViewId} label="Views" onChange={(e) => handleViewChange(String(e.target.value))}>
-                    <MenuItem value="">Default</MenuItem>
+          /* Desktop header - matching screenshot layout */
+          <Box>
+            {/* Title Row */}
+            <Stack direction="row" justifyContent="space-between" alignItems="flex-start" sx={{ mb: 1 }}>
+              <Box>
+                <Typography sx={{ fontWeight: 700, fontSize: '2.5rem', mb: 0, lineHeight: 1.1, letterSpacing: '-0.5px' }}>Leads</Typography>
+                <Typography sx={{ fontSize: '0.9rem', mt: 0 }} color="text.secondary">{isPseudoEmpty ? 0 : total} Items</Typography>
+              </Box>
+            </Stack>
+            
+            {/* Controls Row */}
+            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}>
+              {/* Left side controls */}
+              <Stack direction="row" spacing={1} alignItems="center">
+                <Badge color="primary" badgeContent={activeFilterCount || 0} overlap="circular">
+                  <Button 
+                    variant="outlined" 
+                    size="small" 
+                    startIcon={<TuneIcon />} 
+                    onClick={() => setFilterDrawerOpen(true)}
+                    sx={{ 
+                      borderColor: 'divider',
+                      color: 'text.primary',
+                      '&:hover': { borderColor: 'primary.main' }
+                    }}
+                  >
+                    Filters
+                  </Button>
+                </Badge>
+                
+                <FormControl size="small" sx={{ minWidth: 120 }}>
+                  <Select 
+                    value={selectedViewId} 
+                    onChange={(e) => handleViewChange(String(e.target.value))}
+                    displayEmpty
+                    sx={{ 
+                      '& .MuiSelect-select': { py: 0.75 },
+                      borderColor: 'divider',
+                    }}
+                  >
+                    <MenuItem value="">Views</MenuItem>
                     {views.map(v => (
                       <MenuItem key={v.id} value={v.id}>
                         {v.name} {v.isDefault ? ' (Default)' : ''}
@@ -1306,43 +1409,105 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
                     ))}
                   </Select>
                 </FormControl>
+                
                 <Tooltip title="View options">
                   <span>
-                    <IconButton aria-label="View options" onClick={openViewsMenu} disabled={!selectedViewId}>
-                      <MoreIcon />
+                    <IconButton 
+                      size="small" 
+                      onClick={openViewsMenu} 
+                      disabled={!selectedViewId}
+                      sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1 }}
+                    >
+                      <MoreIcon fontSize="small" />
                     </IconButton>
                   </span>
                 </Tooltip>
-                <Tooltip title="Save current view"><Button variant="outlined" size="small" onClick={() => setSaveViewDialogOpen(true)} startIcon={<SaveIcon />}>Save</Button></Tooltip>
-                <Button variant="outlined" size="small" onClick={() => setColumnsDialogOpen(true)}>Columns</Button>
-                <Badge color="primary" badgeContent={activeFilterCount || 0} overlap="circular">
-                  <Button variant="outlined" size="small" startIcon={<TuneIcon />} onClick={() => setFilterDrawerOpen(true)}>Filters</Button>
-                </Badge>
-                <Button variant="text" size="small" onClick={() => {
-                  setSearchInput('');
-                  setSearchTerm('');
-                  setStatusFilter('');
-                  setCounselorFilter('');
-                  setImportantOnly(false);
-                  setLeadSourceFilter('');
-                  setIndustryFilter('');
-                  setCityFilter('');
-                  setStateFilter('');
-                  setCreatedAfter('');
-                  setCreatedBefore('');
-                  setDatePreset('');
-                  dispatch(setPage(1));
-                }}>Reset</Button>
-                <Tooltip title="Import from CSV"><span><Button variant="outlined" size="small" startIcon={<DownloadIcon />} onClick={() => setImportDialogOpen(true)} disabled={!canCreate}>Import</Button></span></Tooltip>
-                <Button variant="contained" startIcon={<AddIcon />} onClick={onCreateLead} disabled={!canCreate}>New Lead</Button>
-              </>
-            )}
-          >
+                
+                <Tooltip title="Save current view">
+                  <IconButton 
+                    size="small" 
+                    onClick={() => setSaveViewDialogOpen(true)}
+                    sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1 }}
+                  >
+                    <SaveIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+                
+                <Button 
+                  variant="text" 
+                  size="small" 
+                  onClick={() => {
+                    setSearchInput('');
+                    setSearchTerm('');
+                    setStatusFilter('');
+                    setCounselorFilter('');
+                    setImportantOnly(false);
+                    setLeadSourceFilter('');
+                    setIndustryFilter('');
+                    setCityFilter('');
+                    setStateFilter('');
+                    setCreatedAfter('');
+                    setCreatedBefore('');
+                    setDatePreset('');
+                    dispatch(setPage(1));
+                  }}
+                  sx={{ color: 'text.secondary' }}
+                >
+                  Reset
+                </Button>
+              </Stack>
+              
+              {/* Right side controls */}
+              <Stack direction="row" spacing={1} alignItems="center">
+                <Button 
+                  variant="outlined" 
+                  size="small" 
+                  startIcon={<ViewColumnIcon />}
+                  onClick={() => setColumnsDialogOpen(true)}
+                  sx={{ 
+                    borderColor: 'divider',
+                    color: 'text.primary',
+                    '&:hover': { borderColor: 'primary.main' }
+                  }}
+                >
+                  Manage Column
+                </Button>
+                
+                <Button 
+                  variant="outlined" 
+                  size="small" 
+                  startIcon={<DownloadIcon />} 
+                  onClick={() => setImportDialogOpen(true)} 
+                  disabled={!canCreate}
+                  sx={{ 
+                    borderColor: 'divider',
+                    color: 'text.primary',
+                    '&:hover': { borderColor: 'primary.main' }
+                  }}
+                >
+                  Import
+                </Button>
+                
+                <Button 
+                  variant="contained" 
+                  startIcon={<AddIcon />} 
+                  onClick={onCreateLead} 
+                  disabled={!canCreate}
+                  sx={{ 
+                    bgcolor: 'primary.main',
+                    '&:hover': { bgcolor: 'primary.dark' }
+                  }}
+                >
+                  New Lead
+                </Button>
+              </Stack>
+            </Stack>
+            
             {/* Active filter chips */}
             {activeFilterCount > 0 && (
-              <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1, flexWrap: 'wrap' }}>
+              <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2, flexWrap: 'wrap' }}>
                 {activeFilterChips.map(ch => (
-                  <Chip key={ch.key} label={ch.label} onDelete={ch.clear} />
+                  <Chip key={ch.key} label={ch.label} size="small" onDelete={ch.clear} />
                 ))}
                 <Button size="small" onClick={() => {
                   activeFilterChips.forEach(c => c.clear());
@@ -1350,7 +1515,7 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
                 }}>Clear all</Button>
               </Stack>
             )}
-          </PageHeader>
+          </Box>
         )}
       </Box>
 
@@ -1365,11 +1530,400 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
         </Alert>
       )}
 
-      {/* The above container replaces the old filters row with a more compact, modern toolbar */}
+      {/* Data Grid - Desktop / Cards - Mobile */}
+      {isMobile ? (
+        /* Mobile Card View - Pixel Perfect Match to Screenshot */
+        <Box sx={{ bgcolor: '#fff', borderRadius: '20px', mx: -0.5, px: 1.5, pt: 1.5, pb: 2, minHeight: 'calc(100vh - 180px)' }}>
+          {/* Search bar */}
+          <Box 
+            sx={{ 
+              mb: 2,
+              borderRadius: '12px',
+              overflow: 'hidden',
+              bgcolor: '#f3f4f6',
+              display: 'flex',
+              alignItems: 'center',
+              px: 1.5,
+              py: 0.75,
+            }}
+          >
+            <Box sx={{ color: '#9ca3af', mr: 1, display: 'flex', alignItems: 'center' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8"/>
+                <path d="m21 21-4.35-4.35"/>
+              </svg>
+            </Box>
+            <TextField 
+              size="small" 
+              placeholder="Search Lead" 
+              value={searchInput} 
+              onChange={handleSearch}
+              fullWidth
+              variant="standard"
+              InputProps={{
+                disableUnderline: true,
+              }}
+              sx={{ 
+                '& .MuiInputBase-input': {
+                  py: 0.25,
+                  fontSize: '0.9rem',
+                  color: '#6b7280',
+                  '&::placeholder': {
+                    color: '#9ca3af',
+                    opacity: 1,
+                  },
+                },
+              }}
+            />
+          </Box>
 
-      {/* Data Grid */}
-      <Box>
-        <Paper sx={{ height: isMobile ? 'auto' : 600, width: '100%', overflowX: 'auto' }} elevation={0} variant="outlined">
+          {/* Lead Cards */}
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {loading ? (
+              <Box sx={{ textAlign: 'center', py: 4 }}>
+                <Typography color="text.secondary">Loading...</Typography>
+              </Box>
+            ) : isPseudoEmpty || leads.length === 0 ? (
+              <Box sx={{ textAlign: 'center', py: 4 }}>
+                <Typography color="text.secondary">No leads found</Typography>
+              </Box>
+            ) : (
+              leads.map((lead: Lead) => {
+                const fullName = [lead.firstName, lead.lastName].filter(Boolean).join(' ').trim() || '-';
+                const phoneNumber = lead.mobileNumber || lead.whatsappNumber || lead.alternateNumber || '';
+                const lastCallDisposition = lead.lastCallDisposition || '-';
+                const lastCallNotes = lead.lastCallNotes || '-';
+                
+                return (
+                  <Box
+                    key={lead.id}
+                    sx={{
+                      borderRadius: '14px',
+                      overflow: 'hidden',
+                      bgcolor: 'transparent',
+                      border: '1px solid #e5e7eb',
+                    }}
+                  >
+                    {/* Card Content */}
+                    <Box sx={{ px: 2, py: 2 }}>
+                      {/* Top Row: Star, Name, Status Badge, Source */}
+                      <Stack direction="row" alignItems="flex-start" justifyContent="space-between" sx={{ mb: 1.5 }}>
+                        <Stack direction="row" alignItems="flex-start" spacing={0.75}>
+                          <IconButton 
+                            size="small" 
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              try {
+                                await dispatch(updateLead({ id: lead.id, data: { isImportant: !lead.isImportant } }));
+                              } catch {}
+                            }}
+                            sx={{ p: 0, mt: 0.25 }}
+                          >
+                            {lead.isImportant ? (
+                              <StarIcon sx={{ color: '#fbbf24', fontSize: '1.15rem' }} />
+                            ) : (
+                              <StarBorderIcon sx={{ fontSize: '1.15rem', color: '#d1d5db' }} />
+                            )}
+                          </IconButton>
+                          <Box>
+                            <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.25 }}>
+                              <Typography sx={{ fontWeight: 600, fontSize: '0.95rem', color: '#111827' }}>{fullName}</Typography>
+                              <Chip
+                                label={lead.leadStatus || 'New'}
+                                size="small"
+                                sx={{
+                                  height: 20,
+                                  maxWidth: 90,
+                                  fontSize: '0.65rem',
+                                  fontWeight: 500,
+                                  bgcolor: '#e0f2fe',
+                                  color: '#0369a1',
+                                  borderRadius: '5px',
+                                  border: '1px solid #bae6fd',
+                                  '& .MuiChip-label': {
+                                    px: 0.75,
+                                    py: 0,
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
+                                  },
+                                }}
+                              />
+                            </Stack>
+                            <Typography sx={{ fontSize: '0.8rem', color: '#6b7280' }}>
+                              {lead.company || '-'}
+                            </Typography>
+                          </Box>
+                        </Stack>
+                        <Box sx={{ textAlign: 'right', flexShrink: 0, ml: 1 }}>
+                          <Typography sx={{ fontSize: '0.7rem', color: '#9ca3af', fontWeight: 500, mb: 0.125 }}>Source</Typography>
+                          <Typography sx={{ fontSize: '0.8rem', color: '#374151', fontWeight: 500 }}>{lead.leadSource || 'Website'}</Typography>
+                        </Box>
+                      </Stack>
+
+                      {/* Middle Row: Last Call Disposition & Notes */}
+                      <Stack direction="row" spacing={2.5} sx={{ mb: 2 }}>
+                        <Box sx={{ flex: 1 }}>
+                          <Typography sx={{ fontSize: '0.7rem', color: '#374151', fontWeight: 600, mb: 0.25 }}>
+                            Last Call Disposition
+                          </Typography>
+                          <Typography sx={{ fontSize: '0.8rem', color: '#111827' }}>{lastCallDisposition}</Typography>
+                        </Box>
+                        <Box sx={{ flex: 1 }}>
+                          <Typography sx={{ fontSize: '0.7rem', color: '#374151', fontWeight: 600, mb: 0.25 }}>
+                            Last Call Notes
+                          </Typography>
+                          <Typography sx={{ fontSize: '0.8rem', color: '#111827' }}>{lastCallNotes}</Typography>
+                        </Box>
+                      </Stack>
+
+                      {/* Divider */}
+                      <Divider sx={{ mb: 1.5, borderColor: '#e5e7eb' }} />
+
+                      {/* Bottom Row: View Details Button & Actions */}
+                      <Stack direction="row" alignItems="center" justifyContent="space-between">
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          onClick={() => navigate(`/leads/${lead.id}`)}
+                          sx={{
+                            borderRadius: '8px',
+                            textTransform: 'none',
+                            fontWeight: 500,
+                            fontSize: '0.8rem',
+                            px: 4,
+                            py: 0.75,
+                            borderColor: '#d1d5db',
+                            color: '#374151',
+                            bgcolor: 'transparent',
+                            minWidth: 160,
+                            '&:hover': {
+                              borderColor: '#9ca3af',
+                              bgcolor: 'rgba(0,0,0,0.02)',
+                            },
+                          }}
+                        >
+                          View Details
+                        </Button>
+                        <Stack direction="row" spacing={1} alignItems="center">
+                          <IconButton
+                            size="small"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCallClick(lead.id, phoneNumber);
+                            }}
+                            disabled={!phoneNumber || isSuperAdmin}
+                            sx={{ 
+                              color: '#6b7280',
+                              p: 0.75,
+                              border: '1px solid #d1d5db',
+                              borderRadius: '8px',
+                              bgcolor: 'transparent',
+                              '&:hover': { 
+                                color: '#374151', 
+                                bgcolor: 'rgba(0,0,0,0.02)',
+                                borderColor: '#9ca3af',
+                              },
+                            }}
+                          >
+                            <PhoneIcon sx={{ fontSize: '1.1rem' }} />
+                          </IconButton>
+                          <IconButton
+                            size="small"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleWhatsAppClick(phoneNumber);
+                            }}
+                            disabled={!phoneNumber}
+                            sx={{ 
+                              color: '#22c55e',
+                              p: 0.75,
+                              border: '1px solid #d1d5db',
+                              borderRadius: '8px',
+                              bgcolor: 'transparent',
+                              '&:hover': { 
+                                color: '#16a34a', 
+                                bgcolor: 'rgba(34, 197, 94, 0.05)',
+                                borderColor: '#9ca3af',
+                              },
+                            }}
+                          >
+                            <WhatsAppIcon sx={{ fontSize: '1.1rem' }} />
+                          </IconButton>
+                          <IconButton
+                            size="small"
+                            onClick={(e) => handleActionsClick(e, lead.id)}
+                            sx={{ 
+                              color: '#6b7280',
+                              p: 0.75,
+                              border: '1px solid #d1d5db',
+                              borderRadius: '8px',
+                              bgcolor: 'transparent',
+                              '&:hover': { 
+                                color: '#374151', 
+                                bgcolor: 'rgba(0,0,0,0.02)',
+                                borderColor: '#9ca3af',
+                              },
+                            }}
+                          >
+                            <MoreVertIcon sx={{ fontSize: '1.1rem' }} />
+                          </IconButton>
+                        </Stack>
+                      </Stack>
+                    </Box>
+                  </Box>
+                );
+              })
+            )}
+          </Box>
+
+          {/* Mobile Pagination */}
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              py: 2.5,
+              mt: 1,
+            }}
+          >
+            {/* Prev Button */}
+            <IconButton
+              onClick={() => dispatch(setPage(Math.max(1, page - 1)))}
+              disabled={page <= 1 || loading}
+              sx={{
+                border: '1px solid #e5e7eb',
+                borderRadius: '10px',
+                width: 40,
+                height: 40,
+                bgcolor: '#fff',
+                '&:hover': {
+                  bgcolor: '#f9fafb',
+                  borderColor: '#d1d5db',
+                },
+                '&.Mui-disabled': {
+                  bgcolor: '#f9fafb',
+                  borderColor: '#e5e7eb',
+                  opacity: 0.5,
+                },
+              }}
+            >
+              <ArrowBackIosOutlinedIcon sx={{ fontSize: 16, color: '#374151' }} />
+            </IconButton>
+
+            {/* Page Numbers */}
+            <Stack direction="row" spacing={0.5} alignItems="center">
+              {(() => {
+                const totalPages = Math.ceil((isPseudoEmpty ? 0 : total) / limit) || 1;
+                const pages: (number | string)[] = [];
+                
+                // Simplified pagination for mobile matching screenshot: 1 2 ... 67 68
+                if (totalPages <= 5) {
+                  for (let i = 1; i <= totalPages; i++) pages.push(i);
+                } else {
+                  pages.push(1, 2);
+                  pages.push('...');
+                  pages.push(totalPages - 1, totalPages);
+                }
+                
+                return pages.map((p, idx) => (
+                  p === '...' ? (
+                    <Typography key={`ellipsis-${idx}`} sx={{ px: 1, color: '#6b7280', fontSize: '0.9rem', fontWeight: 500 }}>...</Typography>
+                  ) : (
+                    <Button
+                      key={p}
+                      size="small"
+                      disabled={loading}
+                      onClick={() => dispatch(setPage(p as number))}
+                      sx={{
+                        minWidth: 32,
+                        height: 32,
+                        borderRadius: '8px',
+                        fontWeight: page === p ? 600 : 500,
+                        bgcolor: page === p ? 'grey.800' : 'transparent',
+                        color: page === p ? '#fff' : '#374151',
+                        fontSize: '0.9rem',
+                        p: 0,
+                        '&:hover': {
+                          bgcolor: page === p ? 'grey.900' : '#e5e7eb',
+                        },
+                      }}
+                    >
+                      {p}
+                    </Button>
+                  )
+                ));
+              })()}
+            </Stack>
+
+            {/* Next Button */}
+            <IconButton
+              onClick={() => dispatch(setPage(page + 1))}
+              disabled={page >= Math.ceil((isPseudoEmpty ? 0 : total) / limit) || loading}
+              sx={{
+                border: '1px solid #e5e7eb',
+                borderRadius: '10px',
+                width: 40,
+                height: 40,
+                bgcolor: '#fff',
+                '&:hover': {
+                  bgcolor: '#f9fafb',
+                  borderColor: '#d1d5db',
+                },
+                '&.Mui-disabled': {
+                  bgcolor: '#f9fafb',
+                  borderColor: '#e5e7eb',
+                  opacity: 0.5,
+                },
+              }}
+            >
+              <ArrowForwardIosOutlinedIcon sx={{ fontSize: 16, color: '#374151' }} />
+            </IconButton>
+          </Box>
+        </Box>
+      ) : (
+        /* Desktop Data Grid */
+        <Box>
+        <Paper sx={{ width: '100%', overflow: 'hidden' }} elevation={0} variant="outlined">
+          {/* Search bar inside table container */}
+          <Box sx={{ px: 2, py: 1.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+            <TextField 
+              size="small" 
+              placeholder="Search Lead" 
+              value={searchInput} 
+              onChange={handleSearch}
+              sx={{ 
+                width: isMobile ? '100%' : 400,
+                '& .MuiOutlinedInput-root': {
+                  bgcolor: 'background.paper',
+                }
+              }}
+            />
+            <Box sx={{ float: 'right', display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography variant="body2" color="text.secondary">
+                Showing
+              </Typography>
+              <FormControl size="small" sx={{ minWidth: 60 }}>
+                <Select
+                  value={limit}
+                  onChange={(e) => {
+                    dispatch(setLimit(Number(e.target.value)));
+                    dispatch(setPage(1));
+                  }}
+                  sx={{ '& .MuiSelect-select': { py: 1 } }}
+                >
+                  <MenuItem value={10}>10</MenuItem>
+                  <MenuItem value={25}>25</MenuItem>
+                  <MenuItem value={50}>50</MenuItem>
+                  <MenuItem value={100}>100</MenuItem>
+                </Select>
+              </FormControl>
+              <Typography variant="body2" color="text.secondary">
+                of {isPseudoEmpty ? 0 : total} results
+              </Typography>
+            </Box>
+          </Box>
+          
         <DataGrid
           rows={isPseudoEmpty ? [] : leads}
           columns={columns}
@@ -1386,7 +1940,7 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
             const withRequired = Array.from(new Set([ ...visible, 'name', 'actions' ]));
             setSelectedColumns(withRequired);
           }}
-          checkboxSelection={role === 'center-manager'}
+          checkboxSelection
           rowSelectionModel={rowSelectionModel}
           onRowSelectionModelChange={(m) => setRowSelectionModel(m as string[])}
           onRowClick={(params) => navigate(`/leads/${params.id}`)}
@@ -1401,21 +1955,167 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
           loading={loading}
           paginationMode="server"
           sortingMode="server"
-          pageSizeOptions={isMobile ? [10, 25] : [10, 25, 50, 100]}
+          pageSizeOptions={[10, 25, 50, 100]}
           disableRowSelectionOnClick
-          density={'compact'}
-          autoHeight={isMobile}
-          hideFooterSelectedRowCount
+          density="standard"
+          autoHeight
+          hideFooter
           sx={{
-            scrollbarGutter: 'stable both-edges',
+            border: 'none',
+            '& .MuiDataGrid-columnHeaders': {
+              bgcolor: 'grey.50',
+              borderBottom: '1px solid',
+              borderColor: 'divider',
+            },
+            '& .MuiDataGrid-columnHeaderTitle': {
+              fontWeight: 600,
+              color: 'text.secondary',
+              fontSize: '0.875rem',
+            },
+            '& .MuiDataGrid-cell': {
+              borderBottom: '1px solid',
+              borderColor: 'divider',
+              py: 1,
+            },
             '& .MuiDataGrid-cell:focus': {
               outline: 'none',
             },
-            '& .MuiDataGrid-row:hover': {
-              backgroundColor: 'action.hover',
+            '& .MuiDataGrid-row': {
+              '&:hover': {
+                backgroundColor: 'action.hover',
+              },
             },
           }}
         />
+        
+        {/* Custom Pagination */}
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            py: 2,
+            px: 2,
+            borderTop: '1px solid',
+            borderColor: 'divider',
+            bgcolor: 'background.paper',
+          }}
+        >
+          {/* Prev Button */}
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={() => dispatch(setPage(Math.max(1, page - 1)))}
+            disabled={page <= 1 || loading}
+            startIcon={<ArrowBackIosOutlinedIcon sx={{ fontSize: 14 }} />}
+            sx={{
+              borderRadius: '20px',
+              textTransform: 'none',
+              fontWeight: 500,
+              px: 2,
+              borderColor: 'divider',
+              color: 'text.primary',
+              '&:hover': {
+                borderColor: 'text.secondary',
+                bgcolor: 'action.hover',
+              },
+              '&.Mui-disabled': {
+                borderColor: 'divider',
+                color: 'text.disabled',
+              },
+            }}
+          >
+            Prev
+          </Button>
+
+          {/* Page Numbers */}
+          <Stack direction="row" spacing={0.5} alignItems="center">
+            {(() => {
+              const totalPages = Math.ceil((isPseudoEmpty ? 0 : total) / limit) || 1;
+              const pages: (number | string)[] = [];
+              
+              if (totalPages <= 7) {
+                for (let i = 1; i <= totalPages; i++) pages.push(i);
+              } else {
+                // Always show first 3 pages
+                pages.push(1, 2, 3);
+                
+                if (page > 4) {
+                  pages.push('...');
+                }
+                
+                // Show current page area if in middle
+                if (page > 3 && page < totalPages - 2) {
+                  if (!pages.includes(page - 1) && page - 1 > 3) pages.push(page - 1);
+                  if (!pages.includes(page)) pages.push(page);
+                  if (!pages.includes(page + 1) && page + 1 < totalPages - 1) pages.push(page + 1);
+                }
+                
+                if (page < totalPages - 3) {
+                  if (pages[pages.length - 1] !== '...') pages.push('...');
+                }
+                
+                // Always show last 2 pages
+                if (!pages.includes(totalPages - 1)) pages.push(totalPages - 1);
+                if (!pages.includes(totalPages)) pages.push(totalPages);
+              }
+              
+              return pages.map((p, idx) => (
+                p === '...' ? (
+                  <Typography key={`ellipsis-${idx}`} sx={{ px: 1, color: 'text.secondary' }}>...</Typography>
+                ) : (
+                  <Button
+                    key={p}
+                    size="small"
+                    disabled={loading}
+                    onClick={() => dispatch(setPage(p as number))}
+                    sx={{
+                      minWidth: 36,
+                      height: 36,
+                      borderRadius: '8px',
+                      fontWeight: page === p ? 600 : 400,
+                      bgcolor: page === p ? 'grey.800' : 'transparent',
+                      color: page === p ? 'white' : 'text.primary',
+                      '&:hover': {
+                        bgcolor: page === p ? 'grey.800' : 'action.hover',
+                      },
+                    }}
+                  >
+                    {p}
+                  </Button>
+                )
+              ));
+            })()}
+          </Stack>
+
+          {/* Next Button */}
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={() => dispatch(setPage(page + 1))}
+            disabled={page >= Math.ceil((isPseudoEmpty ? 0 : total) / limit) || loading}
+            endIcon={<ArrowForwardIosOutlinedIcon sx={{ fontSize: 14 }} />}
+            sx={{
+              borderRadius: '20px',
+              textTransform: 'none',
+              fontWeight: 500,
+              px: 2,
+              borderColor: 'divider',
+              color: 'text.primary',
+              '&:hover': {
+                borderColor: 'text.secondary',
+                bgcolor: 'action.hover',
+              },
+              '&.Mui-disabled': {
+                borderColor: 'divider',
+                color: 'text.disabled',
+              },
+            }}
+          >
+            Next
+          </Button>
+        </Box>
+
         {role === 'center-manager' && anySelected && (
           <Box sx={{ position: 'sticky', bottom: 0, left: 0, right: 0, bgcolor: 'background.paper', borderTop: '1px solid', borderColor: 'divider', p: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <Typography variant="body2">{rowSelectionModel.length} selected</Typography>
@@ -1428,6 +2128,7 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
         )}
         </Paper>
       </Box>
+      )}
 
       {/* Actions Menu */}
       <Menu

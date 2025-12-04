@@ -259,6 +259,7 @@ export class ReportsService {
     const t = String(type || '').toLowerCase();
     if (t === 'leads' || t === 'lead' || !t) {
       return [
+        { key: 'id', label: 'Lead ID', category: 'Lead Fields' },
         { key: 'referenceNo', label: 'Reference No', category: 'Lead Fields' },
         { key: 'firstName', label: 'First Name', category: 'Lead Fields' },
         { key: 'lastName', label: 'Last Name', category: 'Lead Fields' },
@@ -384,6 +385,8 @@ export class ReportsService {
     if (type === 'leads' || !type) {
       const qb = this.buildLeadsQuery(body?.config, user);
       const cols: string[] = Array.isArray(body?.config?.columns) && body.config.columns.length ? body.config.columns : ['referenceNo','firstName','lastName','email','leadStatus','program','leadSource','dateEntered'];
+      // Always include id for navigation purposes (even if not in selected columns)
+      qb.addSelect('lead.id', 'id');
       // Select with aliases to keep clean keys
       cols.forEach((c) => qb.addSelect(`lead.${c}`, c));
       // sorting
@@ -392,6 +395,7 @@ export class ReportsService {
       // preview limit
       if (preview) qb.take(200);
       const rows = await qb.getRawMany();
+      // Return id in columns only if explicitly selected, but rows always have it
       return { rows, columns: cols };
     }
     if (type === 'lead_history') {
@@ -400,6 +404,8 @@ export class ReportsService {
       // Only allow known history columns
       const allowed = ['leadId','action','note','changedAt'];
       const safeCols = cols.filter(c => allowed.includes(c));
+      // Always include leadId for navigation purposes
+      qb.addSelect('h.leadId', 'leadId');
       safeCols.forEach((c) => {
         const col = c === 'changedAt' ? 'h.changedAt' : c === 'leadId' ? 'h.leadId' : `h.${c}`;
         qb.addSelect(col, c);

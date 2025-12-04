@@ -50,7 +50,7 @@ const LeadDetailPage: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useSelector((s: RootState) => s.auth);
   const userRole = String((user as any)?.role || ((user as any)?.isAdmin ? 'super-admin' : 'counselor')).toLowerCase();
-  const canEditStages = userRole === 'counselor'; // Only counselors can edit status/substatus
+  const canEditStages = userRole === 'counselor' || userRole === 'center-manager'; // Counselors and Center Managers can edit status/substatus
   
   const [lead, setLead] = useState<Lead | null>(null);
   const [loading, setLoading] = useState(false);

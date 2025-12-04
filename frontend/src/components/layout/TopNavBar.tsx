@@ -34,6 +34,9 @@ const TopNavBar: React.FC = () => {
   const user = useSelector((state: RootState) => state.auth.user);
   const [profileAnchor, setProfileAnchor] = useState<null | HTMLElement>(null);
   
+  // Get user role
+  const userRole = String((user as any)?.role || ((user as any)?.isAdmin ? 'super-admin' : 'counselor')).toLowerCase();
+  
   // Expandable states
   const [sunExpanded, setSunExpanded] = useState(false);
   const [clockExpanded, setClockExpanded] = useState(false);
@@ -330,16 +333,18 @@ const TopNavBar: React.FC = () => {
           <PersonAddIcon sx={{ fontSize: 22 }} />
         </IconButton>
 
-        {/* Settings Icon */}
-        <Tooltip title="Settings" arrow placement="bottom" enterDelay={200} leaveDelay={0}>
-          <IconButton
-            size="small"
-            onClick={() => navigate('/settings')}
-            sx={circleIconStyle(isActive('/settings'))}
-          >
-            <SettingsIcon sx={{ fontSize: 24 }} />
-          </IconButton>
-        </Tooltip>
+        {/* Settings Icon - Hidden for counselors */}
+        {userRole !== 'counselor' && (
+          <Tooltip title="Settings" arrow placement="bottom" enterDelay={200} leaveDelay={0}>
+            <IconButton
+              size="small"
+              onClick={() => navigate('/settings')}
+              sx={circleIconStyle(isActive('/settings'))}
+            >
+              <SettingsIcon sx={{ fontSize: 24 }} />
+            </IconButton>
+          </Tooltip>
+        )}
       </Box>
 
       {/* Right Section: Profile */}

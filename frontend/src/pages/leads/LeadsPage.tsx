@@ -38,7 +38,7 @@ const LeadsPage: React.FC = () => {
   }
 
   return (
-    <Box sx={{ p: isMobile ? 0 : 3 }}>
+    <Box sx={{ p: isMobile ? 1 : 2, pt: isMobile ? 1 : 1 }}>
       <LeadsDataTable onCreateLead={handleCreateLead} />
       
       {/* Create Lead Dialog */}

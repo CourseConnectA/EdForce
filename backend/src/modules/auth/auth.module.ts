@@ -19,7 +19,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
         // Provide a sane default for local dev if JWT_SECRET is not set
         secret: configService.get<string>('JWT_SECRET') || 'dev-secret-change-me',
         signOptions: {
-          expiresIn: configService.get<string>('JWT_EXPIRES_IN') || '15m',
+          expiresIn: configService.get<string>('JWT_EXPIRES_IN') || '24h',
         },
       }),
       inject: [ConfigService],
