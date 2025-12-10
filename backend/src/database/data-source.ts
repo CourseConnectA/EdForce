@@ -16,6 +16,14 @@ export const dataSourceOptions: DataSourceOptions = {
   synchronize: false,
   logging: process.env.NODE_ENV === 'development',
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  // Connection pooling for production scalability (handles 50-100+ concurrent users)
+  extra: {
+    max: parseInt(process.env.DATABASE_POOL_MAX || '50'),          // Maximum connections in pool
+    min: parseInt(process.env.DATABASE_POOL_MIN || '5'),           // Minimum connections in pool
+    idleTimeoutMillis: 30000,                                       // Close idle connections after 30s
+    connectionTimeoutMillis: 5000,                                  // Timeout for new connections
+    allowExitOnIdle: true,                                          // Allow pool to close when idle
+  },
 };
 
 const dataSource = new DataSource(dataSourceOptions);

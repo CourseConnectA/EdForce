@@ -1,8 +1,11 @@
-import { Entity, Column, Index } from 'typeorm';
+import { Entity, Column, Index, VersionColumn } from 'typeorm';
 import { BaseEntityDB } from './base.entity';
 
 @Entity('leads')
 export class Lead extends BaseEntityDB {
+  // Optimistic locking to prevent race conditions on concurrent updates
+  @VersionColumn()
+  version: number;
   // Core identifiers
   @Index({ unique: true })
   @Column({ name: 'reference_no', type: 'varchar', length: 16, unique: true })

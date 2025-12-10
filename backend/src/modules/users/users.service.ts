@@ -1,13 +1,18 @@
-import { BadRequestException, Injectable, ForbiddenException, ConflictException } from '@nestjs/common';
+import { BadRequestException, Injectable, ForbiddenException, ConflictException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from '../../database/entities/user.entity';
 import * as bcrypt from 'bcryptjs';
 import { Subject } from 'rxjs';
+import { DataSyncGateway } from '../../gateways/data-sync.gateway';
 
 @Injectable()
 export class UsersService {
-  constructor(@InjectRepository(User) private users: Repository<User>) {}
+  constructor(
+    @InjectRepository(User) private users: Repository<User>,
+    @Inject(forwardRef(() => DataSyncGateway))
+    private dataSyncGateway: DataSyncGateway,
+  ) {}
 
   // Broadcast presence changes to subscribers
   private presenceSubject = new Subject<{ userId: string; presence: 'online'|'offline'|'in_meeting'|'on_call' }>();
@@ -144,11 +149,26 @@ export class UsersService {
   }
 
   async setPresence(userId: string, presence: 'online'|'offline'|'in_meeting'|'on_call'): Promise<{ ok: true }> {
+    // Get user info for WebSocket broadcasting
+    const user = await this.users.findOne({ where: { id: userId } });
+    
     await this.users.update(userId, { presence } as any);
+    
     // Emit event to listeners (SSE)
     try {
       this.presenceSubject.next({ userId, presence });
     } catch {}
+    
+    // Emit via WebSocket for real-time updates
+    try {
+      this.dataSyncGateway.emitPresenceUpdate(
+        userId,
+        presence,
+        user?.centerName || undefined,
+        user?.role || undefined
+      );
+    } catch {}
+    
     return { ok: true };
   }
 

@@ -4,7 +4,7 @@ import { Box, IconButton } from '@mui/material';
 import {
   DashboardOutlined as DashboardIcon,
   WbSunnyOutlined as SunIcon,
-  DonutLargeOutlined as AnalyticsIcon,
+  PhoneInTalk as CallsIcon,
   WorkspacesOutlined as LeadsIcon,
   BarChart as ReportsIcon,
   Apps as MenuIcon,
@@ -41,7 +41,7 @@ const MobileBottomNav: React.FC = memo(() => {
   const navItems = [
     { icon: DashboardIcon, path: '/dashboard' },
     { icon: SunIcon, path: '/presence' },
-    { icon: AnalyticsIcon, path: '/analytics' },
+    { icon: CallsIcon, path: '/calls' },
     { icon: LeadsIcon, path: '/leads' },
     { icon: ReportsIcon, path: '/reports' },
   ];

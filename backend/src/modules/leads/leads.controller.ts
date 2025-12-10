@@ -61,6 +61,25 @@ export class LeadsController {
     return this.leadsService.saveFieldSettings(body.settings);
   }
 
+  // Center Field Visibility (for filters and columns)
+  @Get('center-field-visibility')
+  @ApiOperation({ summary: 'Get center-level filter/column visibility settings' })
+  getCenterFieldVisibility(@Req() req: any) {
+    return this.leadsService.getCenterFieldVisibility(req.user);
+  }
+
+  @Patch('center-field-visibility')
+  @ApiOperation({ summary: 'Update center-level filter/column visibility settings (center manager only)' })
+  updateCenterFieldVisibility(
+    @Body() body: { settings: Array<{ key: string; filterEnabled?: boolean; columnEnabled?: boolean }> },
+    @Req() req: any,
+  ) {
+    if (!body || !Array.isArray(body.settings)) {
+      throw new BadRequestException('settings array required');
+    }
+    return this.leadsService.saveCenterFieldVisibility(body.settings, req.user);
+  }
+
   @Post('import-csv')
   @UseInterceptors(FileInterceptor('file'))
   @ApiOperation({ summary: 'Import leads via CSV (multipart/form-data, field name: file)' })

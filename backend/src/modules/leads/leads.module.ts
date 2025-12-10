@@ -8,13 +8,14 @@ import { LeadHistory } from '../../database/entities/lead-history.entity';
 import { LeadView } from '../../database/entities/lead-view.entity';
 import { User } from '../../database/entities/user.entity';
 import { LeadFieldSetting } from '../../database/entities/lead-field-setting.entity';
+import { CenterFieldVisibility } from '../../database/entities/center-field-visibility.entity';
 import { JwtModule } from '@nestjs/jwt';
 import { LeadsAuthGuard } from './leads-auth.guard';
 import { CenterRoutingRule } from '../../database/entities/center-routing-rule.entity';
 import { DataSyncGateway } from '../../gateways/data-sync.gateway';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Lead, LeadHistory, LeadView, User, LeadFieldSetting, CenterRoutingRule]), JwtModule.register({})],
+  imports: [TypeOrmModule.forFeature([Lead, LeadHistory, LeadView, User, LeadFieldSetting, CenterFieldVisibility, CenterRoutingRule]), JwtModule.register({})],
   controllers: [LeadsController, LeadsOpenController],
   providers: [LeadsService, LeadsAuthGuard, DataSyncGateway],
   exports: [LeadsService],

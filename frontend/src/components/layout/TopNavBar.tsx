@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import {
@@ -10,12 +10,12 @@ import {
   MenuItem,
   Collapse,
   Tooltip,
+  keyframes,
 } from '@mui/material';
 import {
   DashboardOutlined as GridIcon,
   WbSunnyOutlined as SunIcon,
   AutoAwesomeOutlined as StarIcon,
-  DonutLargeOutlined as ChartIcon,
   PersonAddAlt as PersonAddIcon,
   BarChart as AnalyticsIcon,
   CalendarMonth as CalendarIcon,
@@ -23,9 +23,22 @@ import {
   WorkspacesOutlined as LeadIcon,
   Settings as SettingsIcon,
   Logout as LogoutIcon,
+  PhoneInTalk as CallIcon,
+  Circle as CircleIcon,
+  Groups as GroupsIcon,
+  PhoneInTalk as OnCallIcon,
+  PowerSettingsNew as OfflineIcon,
 } from '@mui/icons-material';
 import { RootState } from '../../store/store';
 import { logoutUser } from '../../store/slices/authSlice';
+import webSocketService from '../../services/webSocketService';
+
+// Pulse animation for online status
+const pulse = keyframes`
+  0% { box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.4); }
+  70% { box-shadow: 0 0 0 8px rgba(76, 175, 80, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(76, 175, 80, 0); }
+`;
 
 const TopNavBar: React.FC = () => {
   const navigate = useNavigate();
@@ -37,9 +50,66 @@ const TopNavBar: React.FC = () => {
   // Get user role
   const userRole = String((user as any)?.role || ((user as any)?.isAdmin ? 'super-admin' : 'counselor')).toLowerCase();
   
+  // Counselor presence status
+  const [myPresence, setMyPresence] = useState<string>((user as any)?.presence || 'offline');
+  
   // Expandable states
   const [sunExpanded, setSunExpanded] = useState(false);
   const [clockExpanded, setClockExpanded] = useState(false);
+
+  // Subscribe to presence updates for counselors
+  useEffect(() => {
+    if (userRole !== 'counselor') return;
+    
+    const handlePresenceUpdate = (data: { userId: string; presence: string }) => {
+      if (String(data.userId) === String((user as any)?.id)) {
+        setMyPresence(data.presence);
+      }
+    };
+    
+    const unsubscribe = webSocketService.onPresenceUpdate(handlePresenceUpdate);
+    
+    return () => {
+      unsubscribe();
+    };
+  }, [userRole, user]);
+
+  // Update presence when user changes
+  useEffect(() => {
+    if ((user as any)?.presence) {
+      setMyPresence((user as any).presence);
+    }
+  }, [(user as any)?.presence]);
+
+  // Presence status config
+  const presenceConfig = useMemo(() => ({
+    online: {
+      label: 'Online',
+      color: '#4caf50',
+      bgColor: 'rgba(76, 175, 80, 0.15)',
+      icon: <CircleIcon sx={{ fontSize: 10 }} />,
+    },
+    offline: {
+      label: 'Offline',
+      color: '#9e9e9e',
+      bgColor: 'rgba(158, 158, 158, 0.15)',
+      icon: <OfflineIcon sx={{ fontSize: 14 }} />,
+    },
+    in_meeting: {
+      label: 'In Meeting',
+      color: '#ff9800',
+      bgColor: 'rgba(255, 152, 0, 0.15)',
+      icon: <GroupsIcon sx={{ fontSize: 14 }} />,
+    },
+    on_call: {
+      label: 'On Call',
+      color: '#2196f3',
+      bgColor: 'rgba(33, 150, 243, 0.15)',
+      icon: <OnCallIcon sx={{ fontSize: 14 }} />,
+    },
+  }), []);
+
+  const currentPresence = presenceConfig[myPresence as keyof typeof presenceConfig] || presenceConfig.offline;
 
   const handleProfileClose = () => setProfileAnchor(null);
   const handleLogout = () => {
@@ -102,10 +172,11 @@ const TopNavBar: React.FC = () => {
         px: 3,
         py: 1.5,
         backgroundColor: 'transparent',
+        position: 'relative',
       }}
     >
       {/* Left Section: Logo */}
-      <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 140 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', minWidth: { xs: 60, md: 140 }, zIndex: 1 }}>
         {/* EdForce Logo - Using Image */}
         <Box 
           sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}
@@ -123,14 +194,17 @@ const TopNavBar: React.FC = () => {
         </Box>
       </Box>
 
-      {/* Center Section: All Icons */}
+      {/* Center Section: All Icons - Absolutely positioned for true centering */}
       <Box 
         sx={{ 
+          position: { xs: 'static', md: 'absolute' },
+          left: { md: '50%' },
+          transform: { md: 'translateX(-50%)' },
           display: 'flex', 
           alignItems: 'center', 
-          gap: 1,
+          gap: { xs: 0.5, sm: 1 },
           justifyContent: 'center',
-          flex: 1,
+          flex: { xs: 1, md: 'none' },
         }}
       >
         {/* Grid/Dashboard Icon */}
@@ -207,7 +281,40 @@ const TopNavBar: React.FC = () => {
           </Collapse>
         </Box>
 
-        {/* Clock Icon - Expandable */}
+        {/* Call Management Icon */}
+        <Tooltip title="Call Management" arrow placement="bottom" enterDelay={200} leaveDelay={0}>
+          <IconButton
+            size="small"
+            onClick={() => navigate('/calls')}
+            sx={circleIconStyle(isActive('/calls'))}
+          >
+            <CallIcon sx={{ fontSize: 24 }} />
+          </IconButton>
+        </Tooltip>
+
+        {/* Person Add Icon */}
+       <Tooltip title="Leads" arrow placement="bottom" enterDelay={200} leaveDelay={0}>
+        <IconButton
+          size="small"
+          onClick={() => navigate('/leads')}
+          sx={circleIconStyle(isActive('/leads'))}
+        >
+          <LeadIcon sx={{ fontSize: 22 }} />
+        </IconButton>
+       </Tooltip>
+
+        {/* Analytics/Bar Chart Icon */}
+        <Tooltip title="Reports" arrow placement="bottom" enterDelay={200} leaveDelay={0}>
+          <IconButton
+            size="small"
+            onClick={() => navigate('/reports')}
+            sx={circleIconStyle(isActive('/reports'))}
+          >
+            <AnalyticsIcon sx={{ fontSize: 24 }} />
+          </IconButton>
+        </Tooltip>
+
+         {/* Clock Icon - Expandable */}
         <Box 
           sx={{ 
             display: 'flex', 
@@ -272,39 +379,6 @@ const TopNavBar: React.FC = () => {
           </Collapse>
         </Box>
 
-        {/* Chart Icon */}
-        <Tooltip title="Analytics" arrow placement="bottom" enterDelay={200} leaveDelay={0}>
-          <IconButton
-            size="small"
-            onClick={() => navigate('/analytics')}
-            sx={circleIconStyle(isActive('/analytics'))}
-          >
-            <ChartIcon sx={{ fontSize: 24 }} />
-          </IconButton>
-        </Tooltip>
-
-        {/* Person Add Icon */}
-       <Tooltip title="Leads" arrow placement="bottom" enterDelay={200} leaveDelay={0}>
-        <IconButton
-          size="small"
-          onClick={() => navigate('/leads')}
-          sx={circleIconStyle(isActive('/leads'))}
-        >
-          <LeadIcon sx={{ fontSize: 22 }} />
-        </IconButton>
-       </Tooltip>
-
-        {/* Analytics/Bar Chart Icon */}
-        <Tooltip title="Reports" arrow placement="bottom" enterDelay={200} leaveDelay={0}>
-          <IconButton
-            size="small"
-            onClick={() => navigate('/reports')}
-            sx={circleIconStyle(isActive('/reports'))}
-          >
-            <AnalyticsIcon sx={{ fontSize: 24 }} />
-          </IconButton>
-        </Tooltip>
-
         {/* Calendar Icon */}
         <Tooltip title="Tasks" arrow placement="bottom" enterDelay={200} leaveDelay={0}>
           <IconButton
@@ -325,13 +399,18 @@ const TopNavBar: React.FC = () => {
           <BugsIcon sx={{ fontSize: 22 }} />
         </IconButton>
 
-        {/* Badge Icon */}
-        <IconButton
-          size="small"
-          sx={circleIconStyle(false)}
-        >
-          <PersonAddIcon sx={{ fontSize: 22 }} />
-        </IconButton>
+        {/* Add User Icon - Hidden for counselors */}
+        {userRole !== 'counselor' && (
+          <Tooltip title="Add User" arrow placement="bottom" enterDelay={200} leaveDelay={0}>
+            <IconButton
+              size="small"
+              onClick={() => navigate('/users')}
+              sx={circleIconStyle(isActive('/users'))}
+            >
+              <PersonAddIcon sx={{ fontSize: 22 }} />
+            </IconButton>
+          </Tooltip>
+        )}
 
         {/* Settings Icon - Hidden for counselors */}
         {userRole !== 'counselor' && (
@@ -348,7 +427,54 @@ const TopNavBar: React.FC = () => {
       </Box>
 
       {/* Right Section: Profile */}
-      <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 140, justifyContent: 'flex-end' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', minWidth: { xs: 'auto', md: 140 }, justifyContent: 'flex-end', gap: { xs: 1, sm: 2 }, zIndex: 1 }}>
+        
+        {/* Counselor Presence Status Indicator - Compact on mobile */}
+        {userRole === 'counselor' && (
+          <Tooltip title="Click to change your status" arrow placement="bottom">
+            <Box
+              onClick={() => navigate('/presence')}
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1,
+                height: 36,
+                borderRadius: '18px',
+                backgroundColor: currentPresence.bgColor,
+                border: `1.5px solid ${currentPresence.color}`,
+                cursor: 'pointer',
+                transition: 'all 0.3s ease',
+                animation: myPresence === 'online' ? `${pulse} 2s infinite` : 'none',
+                px: { xs: 1.5, sm: 2 },
+                '&:hover': {
+                  transform: 'scale(1.05)',
+                  boxShadow: `0 4px 12px ${currentPresence.color}40`,
+                },
+              }}
+            >
+              <Box
+                sx={{
+                  width: 10,
+                  height: 10,
+                  borderRadius: '50%',
+                  backgroundColor: currentPresence.color,
+                }}
+              />
+              <Typography
+                sx={{
+                  display: { xs: 'none', sm: 'block' },
+                  color: currentPresence.color,
+                  fontWeight: 600,
+                  fontSize: '0.85rem',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {currentPresence.label}
+              </Typography>
+            </Box>
+          </Tooltip>
+        )}
+
         <Box
           sx={{
             display: 'flex',
@@ -360,6 +486,7 @@ const TopNavBar: React.FC = () => {
         >
           <Typography
             sx={{
+              display: { xs: 'none', md: 'block' },
               color: '#2d3436',
               fontSize: '1.1rem',
               fontWeight: 500,

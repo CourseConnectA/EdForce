@@ -22,7 +22,6 @@ import dashboardService, {
   CenterManagerDashboard,
   FollowUpLead,
 } from '../../services/dashboardService';
-import CallAnalyticsWidget from '@/components/analytics/CallAnalyticsWidget';
 import { screenshotColors, glassMorphism } from '../../theme/theme';
 import PhoneIcon from '@mui/icons-material/Phone';
 import EmailIcon from '@mui/icons-material/Email';
@@ -261,6 +260,8 @@ const CounselorDashboardView: React.FC<CounselorDashboardViewProps> = ({
             alignItems: 'center',
             cursor: 'pointer',
             transition: 'all 0.2s ease',
+            WebkitTapHighlightColor: 'transparent',
+            userSelect: 'none',
           }}
         >
           <Box sx={{
@@ -322,6 +323,8 @@ const CounselorDashboardView: React.FC<CounselorDashboardViewProps> = ({
             alignItems: 'center',
             cursor: 'pointer',
             transition: 'all 0.2s ease',
+            WebkitTapHighlightColor: 'transparent',
+            userSelect: 'none',
           }}
         >
           <Box sx={{
@@ -383,6 +386,8 @@ const CounselorDashboardView: React.FC<CounselorDashboardViewProps> = ({
             alignItems: 'center',
             cursor: 'pointer',
             transition: 'all 0.2s ease',
+            WebkitTapHighlightColor: 'transparent',
+            userSelect: 'none',
           }}
         >
           <Box sx={{
@@ -496,11 +501,6 @@ const CounselorDashboardView: React.FC<CounselorDashboardViewProps> = ({
             />
           )}
         </Box>
-      </Box>
-
-      {/* Call Analytics Widget */}
-      <Box sx={{ mt: 3 }}>
-        <CallAnalyticsWidget period="daily" />
       </Box>
     </Box>
   );
@@ -654,11 +654,13 @@ const CenterManagerDashboardView: React.FC<CenterManagerDashboardViewProps> = ({
             alignItems: 'center',
             cursor: 'pointer',
             transition: 'all 0.2s ease',
+            WebkitTapHighlightColor: 'transparent',
+            userSelect: 'none',
           }}
         >
           <Box sx={{
-            width: isMobile ? 56 : 64,
-            height: isMobile ? 56 : 64,
+            width: 56,
+            height: 56,
             borderRadius: '50%',
             border: activeFilter === 'today' ? '2px solid #1976d2' : '2px solid rgba(0,0,0,0.12)',
             backgroundColor: activeFilter === 'today' ? 'rgba(25, 118, 210, 0.08)' : 'transparent',
@@ -672,7 +674,7 @@ const CenterManagerDashboardView: React.FC<CenterManagerDashboardViewProps> = ({
               borderColor: '#1976d2',
             },
           }}>
-            <EventIcon sx={{ fontSize: isMobile ? 28 : 32, color: activeFilter === 'today' ? '#1976d2' : '#666' }} />
+            <EventIcon sx={{ fontSize: 28, color: activeFilter === 'today' ? '#1976d2' : '#666' }} />
             {stats.followUpsToday > 0 && (
               <Box sx={{
                 position: 'absolute',
@@ -715,11 +717,13 @@ const CenterManagerDashboardView: React.FC<CenterManagerDashboardViewProps> = ({
             alignItems: 'center',
             cursor: 'pointer',
             transition: 'all 0.2s ease',
+            WebkitTapHighlightColor: 'transparent',
+            userSelect: 'none',
           }}
         >
           <Box sx={{
-            width: isMobile ? 56 : 64,
-            height: isMobile ? 56 : 64,
+            width: 56,
+            height: 56,
             borderRadius: '50%',
             border: activeFilter === 'qualified' ? '2px solid #4caf50' : '2px solid rgba(0,0,0,0.12)',
             backgroundColor: activeFilter === 'qualified' ? 'rgba(76, 175, 80, 0.08)' : 'transparent',
@@ -733,7 +737,7 @@ const CenterManagerDashboardView: React.FC<CenterManagerDashboardViewProps> = ({
               borderColor: '#4caf50',
             },
           }}>
-            <CheckCircleIcon sx={{ fontSize: isMobile ? 28 : 32, color: activeFilter === 'qualified' ? '#4caf50' : '#666' }} />
+            <CheckCircleIcon sx={{ fontSize: 28, color: activeFilter === 'qualified' ? '#4caf50' : '#666' }} />
             {(stats.qualifiedLeadsList?.length || 0) > 0 && (
               <Box sx={{
                 position: 'absolute',
@@ -776,11 +780,13 @@ const CenterManagerDashboardView: React.FC<CenterManagerDashboardViewProps> = ({
             alignItems: 'center',
             cursor: 'pointer',
             transition: 'all 0.2s ease',
+            WebkitTapHighlightColor: 'transparent',
+            userSelect: 'none',
           }}
         >
           <Box sx={{
-            width: isMobile ? 56 : 64,
-            height: isMobile ? 56 : 64,
+            width: 56,
+            height: 56,
             borderRadius: '50%',
             border: activeFilter === 'overdue' ? '2px solid #ff9800' : '2px solid rgba(0,0,0,0.12)',
             backgroundColor: activeFilter === 'overdue' ? 'rgba(255, 152, 0, 0.08)' : 'transparent',
@@ -794,7 +800,7 @@ const CenterManagerDashboardView: React.FC<CenterManagerDashboardViewProps> = ({
               borderColor: '#ff9800',
             },
           }}>
-            <WarningAmberIcon sx={{ fontSize: isMobile ? 28 : 32, color: activeFilter === 'overdue' ? '#ff9800' : '#666' }} />
+            <WarningAmberIcon sx={{ fontSize: 28, color: activeFilter === 'overdue' ? '#ff9800' : '#666' }} />
             {stats.overdueFollowUps > 0 && (
               <Box sx={{
                 position: 'absolute',
@@ -969,11 +975,6 @@ const CenterManagerDashboardView: React.FC<CenterManagerDashboardViewProps> = ({
             </Box>
           ))}
         </Box>
-      </Box>
-
-      {/* Call Analytics Widget */}
-      <Box>
-        <CallAnalyticsWidget period="daily" />
       </Box>
     </Box>
   );
@@ -1207,11 +1208,6 @@ const SuperAdminDashboardView: React.FC<SuperAdminDashboardViewProps> = ({
             })}
           </Box>
         </Box>
-      </Box>
-
-      {/* Call Analytics Widget */}
-      <Box>
-        <CallAnalyticsWidget period="daily" />
       </Box>
     </Box>
   );

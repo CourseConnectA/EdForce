@@ -134,7 +134,12 @@ const authSlice = createSlice({
 
         // Store tokens in localStorage
         localStorage.setItem('accessToken', action.payload.accessToken);
-  // Stop storing refresh token; use cookie-based refresh
+        // Stop storing refresh token; use cookie-based refresh
+
+        // Update WebSocket auth so it reconnects with fresh token and joins correct rooms
+        import('../../services/webSocketService').then(({ default: webSocketService }) => {
+          webSocketService.updateAuth(action.payload.accessToken);
+        });
       })
       .addCase(loginUser.rejected, (state, action) => {
         state.isLoading = false;

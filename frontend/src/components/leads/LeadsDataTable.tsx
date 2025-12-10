@@ -74,8 +74,10 @@ import {
 } from '../../store/slices/leadsSlice';
 import { Lead, LeadView } from '../../services/leadsService';
 import leadsService from '../../services/leadsService';
+import leadSettingsService, { CenterFieldVisibility } from '../../services/leadSettingsService';
 import { GLOBAL_LEAD_STATUSES } from '../../constants/leadStatus';
 import callsService from '@/services/callsService';
+import webSocketService from '@/services/webSocketService';
 import CallDispositionModal from '@/components/common/CallDispositionModal';
 import { Capacitor } from '@capacitor/core';
 
@@ -224,6 +226,9 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
   const [shareWithCenter, setShareWithCenter] = useState(false);
   const [viewError, setViewError] = useState<string | null>(null);
   const [columnVisibilityModel, setColumnVisibilityModel] = useState<GridColumnVisibilityModel>({});
+
+  // Center-level field visibility settings (for center-manager and counselor)
+  const [centerFieldVisibility, setCenterFieldVisibility] = useState<CenterFieldVisibility[]>([]);
 
   // CSV Import state
   const [importDialogOpen, setImportDialogOpen] = useState(false);
@@ -393,6 +398,66 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
     dispatch(fetchLeads(params));
   }, [dispatch, page, limit, searchTerm, statusFilter, counselorFilter, importantOnly, leadSourceFilter, industryFilter, cityFilter, stateFilter, createdAfter, createdBefore, sortModel, paginationReady]);
 
+  // Listen for real-time lead/call updates via WebSocket
+  useEffect(() => {
+    if (!paginationReady) return;
+
+    let debounceTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    const debouncedRefresh = () => {
+      if (debounceTimeout) {
+        clearTimeout(debounceTimeout);
+      }
+      debounceTimeout = setTimeout(() => {
+        const params = {
+          page,
+          limit,
+          search: searchTerm || undefined,
+          leadStatus: statusFilter || undefined,
+          assignedUserId: role === 'center-manager' && counselorFilter ? counselorFilter : undefined,
+          isImportant: importantOnly ? true : undefined,
+          leadSource: leadSourceFilter || undefined,
+          industry: industryFilter || undefined,
+          locationCity: cityFilter || undefined,
+          locationState: stateFilter || undefined,
+          createdAfter: createdAfter || undefined,
+          createdBefore: createdBefore || undefined,
+          sortBy: sortModel[0]?.field || undefined,
+          sortOrder: sortModel[0]?.sort || undefined,
+        };
+        dispatch(fetchLeads(params));
+        debounceTimeout = null;
+      }, 500);
+    };
+
+    const handleLeadEvent = (payload: any) => {
+      console.log('📡 Lead WebSocket event received:', payload?.id || payload);
+      debouncedRefresh();
+    };
+
+    const handleCallEvent = (payload: any) => {
+      console.log('📞 Call WebSocket event received:', payload?.id || payload);
+      debouncedRefresh();
+    };
+
+    webSocketService.on('lead:created', handleLeadEvent);
+    webSocketService.on('lead:updated', handleLeadEvent);
+    webSocketService.on('lead:assigned', handleLeadEvent);
+    webSocketService.on('lead:deleted', handleLeadEvent);
+    webSocketService.on('call:logged', handleCallEvent);
+
+    return () => {
+      if (debounceTimeout) {
+        clearTimeout(debounceTimeout);
+      }
+      webSocketService.off('lead:created', handleLeadEvent);
+      webSocketService.off('lead:updated', handleLeadEvent);
+      webSocketService.off('lead:assigned', handleLeadEvent);
+      webSocketService.off('lead:deleted', handleLeadEvent);
+      webSocketService.off('call:logged', handleCallEvent);
+    };
+  }, [dispatch, page, limit, searchTerm, statusFilter, counselorFilter, importantOnly, leadSourceFilter, industryFilter, cityFilter, stateFilter, createdAfter, createdBefore, sortModel, paginationReady, role]);
+
   // Load counselors list for center manager (for filter dropdown)
   useEffect(() => {
     if (role === 'center-manager') {
@@ -400,6 +465,18 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
         try {
           const list = await leadsService.listCounselors();
           setCounselors(list || []);
+        } catch {}
+      })();
+    }
+  }, [role]);
+
+  // Load center field visibility settings (for center-manager and counselor)
+  useEffect(() => {
+    if (role === 'center-manager' || role === 'counselor') {
+      (async () => {
+        try {
+          const vis = await leadSettingsService.getCenterFieldVisibility();
+          setCenterFieldVisibility(vis || []);
         } catch {}
       })();
     }
@@ -903,6 +980,23 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
   const last = lastName?.charAt(0)?.toUpperCase() || '';
   return first + last || '?';
 };
+
+  // Helper: Check if a field is enabled in filters (for center-manager/counselor)
+  // If no settings exist, default to enabled
+  const isFilterFieldEnabled = useCallback((fieldKey: string): boolean => {
+    if (isSuperAdmin) return true; // Super admin always sees all
+    if (centerFieldVisibility.length === 0) return true; // No settings = all enabled
+    const setting = centerFieldVisibility.find((s) => s.key === fieldKey);
+    return setting ? setting.filterEnabled : true;
+  }, [isSuperAdmin, centerFieldVisibility]);
+
+  // Helper: Check if a field is enabled in columns (for center-manager/counselor)
+  const isColumnFieldEnabled = useCallback((fieldKey: string): boolean => {
+    if (isSuperAdmin) return true;
+    if (centerFieldVisibility.length === 0) return true;
+    const setting = centerFieldVisibility.find((s) => s.key === fieldKey);
+    return setting ? setting.columnEnabled : true;
+  }, [isSuperAdmin, centerFieldVisibility]);
 
   // Define columns
   const navigate = useNavigate();
@@ -1696,7 +1790,7 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
                             borderColor: '#d1d5db',
                             color: '#374151',
                             bgcolor: 'transparent',
-                            minWidth: 160,
+                            minWidth: 120,
                             '&:hover': {
                               borderColor: '#9ca3af',
                               bgcolor: 'rgba(0,0,0,0.02)',
@@ -2116,13 +2210,15 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
           </Button>
         </Box>
 
-        {role === 'center-manager' && anySelected && (
+        {anySelected && (
           <Box sx={{ position: 'sticky', bottom: 0, left: 0, right: 0, bgcolor: 'background.paper', borderTop: '1px solid', borderColor: 'divider', p: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <Typography variant="body2">{rowSelectionModel.length} selected</Typography>
             <Stack direction="row" spacing={1}>
               <Button size="small" onClick={() => setRowSelectionModel([])}>Clear</Button>
               <Button size="small" variant="outlined" color="error" onClick={handleBulkDeleteClick}>Delete</Button>
-              <Button size="small" variant="contained" startIcon={<MoreVertIcon />} onClick={handleBulkAssignClick}>Assign to counselor</Button>
+              {(role === 'center-manager' || isSuperAdmin) && (
+                <Button size="small" variant="contained" startIcon={<MoreVertIcon />} onClick={handleBulkAssignClick}>Assign to counselor</Button>
+              )}
             </Stack>
           </Box>
         )}
@@ -2271,17 +2367,19 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
               fullWidth
               size="small"
             />
-            <FormControl fullWidth size="small">
-              <InputLabel>Status</InputLabel>
-              <Select value={statusFilter} label="Status" onChange={(e) => setStatusFilter(String(e.target.value))}>
-                <MenuItem value="">All Statuses</MenuItem>
-                {GLOBAL_LEAD_STATUSES.map(s => (
-                  <MenuItem key={s} value={s}>{s}</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+            {isFilterFieldEnabled('leadStatus') && (
+              <FormControl fullWidth size="small">
+                <InputLabel>Status</InputLabel>
+                <Select value={statusFilter} label="Status" onChange={(e) => setStatusFilter(String(e.target.value))}>
+                  <MenuItem value="">All Statuses</MenuItem>
+                  {GLOBAL_LEAD_STATUSES.map(s => (
+                    <MenuItem key={s} value={s}>{s}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
 
-            {role === 'center-manager' && (
+            {role === 'center-manager' && isFilterFieldEnabled('counselor') && (
               <FormControl fullWidth size="small">
                 <InputLabel>Counselor</InputLabel>
                 <Select value={counselorFilter} label="Counselor" onChange={(e) => { setCounselorFilter(String(e.target.value)); dispatch(setPage(1)); }}>
@@ -2293,54 +2391,68 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
               </FormControl>
             )}
 
-            <Autocomplete
-              freeSolo
-              options={sourceOptions}
-              value={leadSourceFilter}
-              onInputChange={(_, v) => setLeadSourceFilter(v)}
-              renderInput={(params) => <TextField {...params} label="Lead Source" size="small" />}
-            />
-            <Autocomplete
-              freeSolo
-              options={industryOptions}
-              value={industryFilter}
-              onInputChange={(_, v) => setIndustryFilter(v)}
-              renderInput={(params) => <TextField {...params} label="Industry" size="small" />}
-            />
-            <Autocomplete
-              freeSolo
-              options={cityOptions}
-              value={cityFilter}
-              onInputChange={(_, v) => setCityFilter(v)}
-              renderInput={(params) => <TextField {...params} label="City" size="small" />}
-            />
-            <Autocomplete
-              freeSolo
-              options={stateOptions}
-              value={stateFilter}
-              onInputChange={(_, v) => setStateFilter(v)}
-              renderInput={(params) => <TextField {...params} label="State" size="small" />}
-            />
+            {isFilterFieldEnabled('leadSource') && (
+              <Autocomplete
+                freeSolo
+                options={sourceOptions}
+                value={leadSourceFilter}
+                onInputChange={(_, v) => setLeadSourceFilter(v)}
+                renderInput={(params) => <TextField {...params} label="Lead Source" size="small" />}
+              />
+            )}
+            {isFilterFieldEnabled('industry') && (
+              <Autocomplete
+                freeSolo
+                options={industryOptions}
+                value={industryFilter}
+                onInputChange={(_, v) => setIndustryFilter(v)}
+                renderInput={(params) => <TextField {...params} label="Industry" size="small" />}
+              />
+            )}
+            {isFilterFieldEnabled('locationCity') && (
+              <Autocomplete
+                freeSolo
+                options={cityOptions}
+                value={cityFilter}
+                onInputChange={(_, v) => setCityFilter(v)}
+                renderInput={(params) => <TextField {...params} label="City" size="small" />}
+              />
+            )}
+            {isFilterFieldEnabled('locationState') && (
+              <Autocomplete
+                freeSolo
+                options={stateOptions}
+                value={stateFilter}
+                onInputChange={(_, v) => setStateFilter(v)}
+                renderInput={(params) => <TextField {...params} label="State" size="small" />}
+              />
+            )}
 
-            <FormControl size="small" fullWidth>
-              <InputLabel>Date Preset</InputLabel>
-              <Select value={datePreset} label="Date Preset" onChange={(e) => applyDatePreset(String(e.target.value))}>
-                <MenuItem value="">Any time</MenuItem>
-                <MenuItem value="today">Today</MenuItem>
-                <MenuItem value="last7">Last 7 days</MenuItem>
-                <MenuItem value="thisMonth">This month</MenuItem>
-                <MenuItem value="lastMonth">Last month</MenuItem>
-                <MenuItem value="thisQuarter">This quarter</MenuItem>
-                <MenuItem value="custom">Custom range</MenuItem>
-              </Select>
-            </FormControl>
+            {isFilterFieldEnabled('createdAt') && (
+              <>
+                <FormControl size="small" fullWidth>
+                  <InputLabel>Date Preset</InputLabel>
+                  <Select value={datePreset} label="Date Preset" onChange={(e) => applyDatePreset(String(e.target.value))}>
+                    <MenuItem value="">Any time</MenuItem>
+                    <MenuItem value="today">Today</MenuItem>
+                    <MenuItem value="last7">Last 7 days</MenuItem>
+                    <MenuItem value="thisMonth">This month</MenuItem>
+                    <MenuItem value="lastMonth">Last month</MenuItem>
+                    <MenuItem value="thisQuarter">This quarter</MenuItem>
+                    <MenuItem value="custom">Custom range</MenuItem>
+                  </Select>
+                </FormControl>
 
-            <Stack direction="row" spacing={1}>
-              <TextField label="Created After" type="date" size="small" InputLabelProps={{ shrink: true }} value={createdAfter} onChange={(e) => setCreatedAfter(e.target.value)} />
-              <TextField label="Created Before" type="date" size="small" InputLabelProps={{ shrink: true }} value={createdBefore} onChange={(e) => setCreatedBefore(e.target.value)} />
-            </Stack>
+                <Stack direction="row" spacing={1}>
+                  <TextField label="Created After" type="date" size="small" InputLabelProps={{ shrink: true }} value={createdAfter} onChange={(e) => setCreatedAfter(e.target.value)} />
+                  <TextField label="Created Before" type="date" size="small" InputLabelProps={{ shrink: true }} value={createdBefore} onChange={(e) => setCreatedBefore(e.target.value)} />
+                </Stack>
+              </>
+            )}
 
-            <FormControlLabel control={<Checkbox checked={importantOnly} onChange={(e) => setImportantOnly(e.target.checked)} />} label="Important only" />
+            {isFilterFieldEnabled('isImportant') && (
+              <FormControlLabel control={<Checkbox checked={importantOnly} onChange={(e) => setImportantOnly(e.target.checked)} />} label="Important only" />
+            )}
           </Stack>
 
           <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
@@ -2441,60 +2553,110 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
         <DialogTitle>Choose Columns</DialogTitle>
         <DialogContent>
           <FormGroup>
-            {Array.from(new Set(DEFAULT_COLUMNS.filter(c => c !== 'actions'))).map((field) => (
-              <FormControlLabel
-                key={field}
-                control={<Checkbox checked={selectedColumns.includes(field)} onChange={(e) => {
-                  const checked = e.target.checked;
-                  setSelectedColumns(prev => {
-                    const base = new Set(prev);
-                    if (checked) base.add(field); else base.delete(field);
-                    // always keep name and actions
-                    base.add('name'); base.add('actions');
-                    return Array.from(base);
-                  });
-                }} />}
-                label={field === 'name' ? 'Name' : field === 'leadStatus' ? 'Status' : field === 'leadSource' ? 'Source' : field === 'estimatedValue' ? 'Est. Value' : field === 'expectedCloseDate' ? 'Expected Close' : field.charAt(0).toUpperCase() + field.slice(1)}
-              />
-            ))}
+            {(() => {
+              // All available columns (excluding always-present 'isImportant' and 'actions')
+              const allColumnKeys = ['referenceNo','name','owner','counselor','company','leadStatus','estimatedValue','leadSource','expectedCloseDate','nextFollowUpAt','lastCallDisposition','lastCallNotes'];
+              // Filter by center field visibility settings
+              const visibleColumnKeys = allColumnKeys.filter(c => isColumnFieldEnabled(c));
+              const getLabel = (field: string) => {
+                const labels: Record<string, string> = {
+                  referenceNo: 'Reference / Reg. No',
+                  name: 'Name',
+                  owner: 'Owner',
+                  counselor: 'Counselor',
+                  company: 'Company',
+                  leadStatus: 'Status',
+                  estimatedValue: 'Est. Value',
+                  leadSource: 'Source',
+                  expectedCloseDate: 'Expected Close',
+                  nextFollowUpAt: 'Next Follow-up',
+                  lastCallDisposition: 'Last Call Disposition',
+                  lastCallNotes: 'Last Call Notes',
+                };
+                return labels[field] || field.charAt(0).toUpperCase() + field.slice(1);
+              };
+              return visibleColumnKeys.map((field) => (
+                <FormControlLabel
+                  key={field}
+                  control={<Checkbox checked={selectedColumns.includes(field)} onChange={(e) => {
+                    const checked = e.target.checked;
+                    setSelectedColumns(prev => {
+                      const base = new Set(prev);
+                      if (checked) base.add(field); else base.delete(field);
+                      // always keep name and actions
+                      base.add('name'); base.add('actions');
+                      return Array.from(base);
+                    });
+                  }} />}
+                  label={getLabel(field)}
+                />
+              ));
+            })()}
           </FormGroup>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setSelectedColumns(DEFAULT_COLUMNS)}>Default</Button>
-          <Button onClick={() => setSelectedColumns(Array.from(new Set([...DEFAULT_COLUMNS])))}>Select all</Button>
+          <Button onClick={() => {
+            const allColumnKeys = ['referenceNo','name','owner','counselor','company','leadStatus','estimatedValue','leadSource','expectedCloseDate','nextFollowUpAt','lastCallDisposition','lastCallNotes','actions'];
+            const enabledCols = allColumnKeys.filter(c => c === 'actions' || isColumnFieldEnabled(c));
+            setSelectedColumns(enabledCols);
+          }}>Select all</Button>
           <Button onClick={() => setSelectedColumns(['name','actions'])}>Clear</Button>
           <Button onClick={() => setColumnsDialogOpen(false)} variant="contained">Done</Button>
         </DialogActions>
       </Dialog>
 
       {/* Import CSV Dialog */}
-      <Dialog open={importDialogOpen} onClose={() => setImportDialogOpen(false)} fullScreen={isMobile}>
-        <DialogTitle>Import Leads from CSV</DialogTitle>
+      <Dialog open={importDialogOpen} onClose={() => { setImportDialogOpen(false); setImportResult(null); setImportError(''); }} fullScreen={isMobile} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <DownloadIcon color="primary" />
+          Import Leads from CSV
+        </DialogTitle>
         <DialogContent>
-          {importError && <Alert severity="error" sx={{ mb: 2 }}>{importError}</Alert>}
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ mb: 2 }}>
-            <Button variant="contained" color="primary" onClick={handleDownloadFullSampleCsv} disabled={importing}>
-              Download Sample CSV
-            </Button>
-            <Button variant="outlined" component="label" disabled={importing}>
-              Choose File
-              <input type="file" hidden accept=".csv,text/csv" onChange={(e) => handleImportCsv(e.target.files?.[0] || undefined)} />
-            </Button>
-          </Stack>
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-            The sample file contains only the header row. Add one lead per line. Enclose values containing commas in double quotes. To include a literal double quote inside a field, escape it by doubling (e.g. "A ""quoted"" value").
-          </Typography>
+          {/* Success/Error Result Display */}
           {importResult && (
-            <Box sx={{ mt: 2 }}>
-              <Typography variant="subtitle2">Import Result</Typography>
-              <pre style={{ maxHeight: 200, overflow: 'auto', background: '#f5f5f5', padding: 8, borderRadius: 4 }}>
-                {JSON.stringify(importResult, null, 2)}
-              </pre>
-            </Box>
+            <Alert 
+              severity={importResult.errors?.length > 0 ? 'warning' : 'success'} 
+              sx={{ mb: 2, borderRadius: 2 }}
+              onClose={() => setImportResult(null)}
+            >
+              <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.5 }}>
+                {importResult.errors?.length > 0 ? 'Import Completed with Issues' : 'Import Successful!'}
+              </Typography>
+              <Typography variant="body2">
+                {importResult.created > 0 && (
+                  <span style={{ color: '#2e7d32' }}>✓ {importResult.created} lead{importResult.created !== 1 ? 's' : ''} imported successfully</span>
+                )}
+                {importResult.errors?.length > 0 && (
+                  <span style={{ display: 'block', color: '#d32f2f' }}>✗ {importResult.errors.length} failed to import</span>
+                )}
+              </Typography>
+            </Alert>
+          )}
+          
+          {importError && <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>{importError}</Alert>}
+          
+          {!importResult && (
+            <>
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ mb: 2 }}>
+                <Button variant="contained" color="primary" onClick={handleDownloadFullSampleCsv} disabled={importing} sx={{ borderRadius: 2 }}>
+                  Download Sample CSV
+                </Button>
+                <Button variant="outlined" component="label" disabled={importing} sx={{ borderRadius: 2 }}>
+                  {importing ? 'Importing...' : 'Choose File'}
+                  <input type="file" hidden accept=".csv,text/csv" onChange={(e) => handleImportCsv(e.target.files?.[0] || undefined)} />
+                </Button>
+              </Stack>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+                The sample file contains only the header row. Add one lead per line. Enclose values containing commas in double quotes. To include a literal double quote inside a field, escape it by doubling (e.g. "A ""quoted"" value").
+              </Typography>
+            </>
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setImportDialogOpen(false)}>Close</Button>
+          <Button onClick={() => { setImportDialogOpen(false); setImportResult(null); setImportError(''); }} sx={{ borderRadius: 2 }}>
+            {importResult ? 'Done' : 'Close'}
+          </Button>
         </DialogActions>
       </Dialog>
 

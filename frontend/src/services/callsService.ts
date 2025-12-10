@@ -31,6 +31,41 @@ export interface CallAnalytics {
   avgDuration: number;
 }
 
+export interface CallDirectionStats {
+  // Total counts
+  totalCalls: number;
+  totalInbound: number;
+  totalOutbound: number;
+  totalMissed: number;
+  
+  // Answered/Unanswered by direction
+  inboundAnswered: number;
+  inboundUnanswered: number;
+  outboundAnswered: number;
+  outboundUnanswered: number;
+  
+  // Total answered/unanswered
+  totalAnswered: number;
+  totalUnanswered: number;
+  
+  // Unique counts (unique lead/phone combinations)
+  uniqueInboundAnswered: number;
+  uniqueInboundUnanswered: number;
+  uniqueOutboundAnswered: number;
+  uniqueOutboundUnanswered: number;
+  uniqueAnswered: number;
+  uniqueUnanswered: number;
+  
+  // Duration stats
+  totalDuration: number;
+  avgDuration: number;
+}
+
+export interface CallAnalyticsResponse {
+  summary: CallDirectionStats;
+  breakdown: CallAnalytics[];
+}
+
 class CallsService {
   // Log a call from device
   async logCall(data: {
@@ -60,9 +95,38 @@ class CallsService {
     return response;
   }
 
-  // Get analytics (daily/monthly)
-  async getAnalytics(params?: { period?: 'daily' | 'monthly'; startDate?: string; endDate?: string }): Promise<CallAnalytics[]> {
+  // Get analytics (daily/monthly) - returns summary with direction breakdown and user/center breakdown
+  async getAnalytics(params?: { period?: 'daily' | 'monthly'; startDate?: string; endDate?: string }): Promise<CallAnalyticsResponse> {
     const response = await apiService.get('/calls/analytics', { params });
+    // Handle both old format (array) and new format (object with summary + breakdown)
+    if (Array.isArray(response)) {
+      // Legacy format - convert to new format
+      const totalCalls = response.reduce((sum, r) => sum + r.totalCalls, 0);
+      const totalDuration = response.reduce((sum, r) => sum + r.totalDuration, 0);
+      return {
+        summary: {
+          totalCalls,
+          totalInbound: 0,
+          totalOutbound: totalCalls,
+          totalMissed: 0,
+          inboundAnswered: 0,
+          inboundUnanswered: 0,
+          outboundAnswered: totalCalls,
+          outboundUnanswered: 0,
+          totalAnswered: totalCalls,
+          totalUnanswered: 0,
+          uniqueInboundAnswered: 0,
+          uniqueInboundUnanswered: 0,
+          uniqueOutboundAnswered: totalCalls,
+          uniqueOutboundUnanswered: 0,
+          uniqueAnswered: totalCalls,
+          uniqueUnanswered: 0,
+          totalDuration,
+          avgDuration: totalCalls > 0 ? Math.round(totalDuration / totalCalls) : 0,
+        },
+        breakdown: response,
+      };
+    }
     return response;
   }
 

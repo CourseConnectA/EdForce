@@ -1,6 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Box, Button, Paper, Typography, Stack, useMediaQuery, useTheme, IconButton, Menu, MenuItem, ListItemText, ToggleButtonGroup, ToggleButton, Card, CardContent, Divider, Chip } from '@mui/material';
-import PageHeader from '@/components/common/PageHeader';
+import { Box, Button, Paper, Typography, Stack, useMediaQuery, useTheme, IconButton, Menu, MenuItem, ListItemText, ToggleButtonGroup, ToggleButton, Card, CardContent, Divider, Chip, alpha } from '@mui/material';
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis, LineChart, Line, PieChart, Pie, Cell, FunnelChart, Funnel, LabelList } from 'recharts';
 import { DataGrid, GridColDef } from '@mui/x-data-grid';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -15,6 +14,8 @@ import ViewListIcon from '@mui/icons-material/ViewList';
 import ViewModuleIcon from '@mui/icons-material/ViewModule';
 import TableRowsIcon from '@mui/icons-material/TableRows';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import AssessmentIcon from '@mui/icons-material/Assessment';
+import { screenshotColors } from '@/theme/theme';
 
 interface ReportDto {
   id: string;
@@ -172,8 +173,57 @@ const ReportView: React.FC = () => {
     doc.save(`${report.name || 'report'}.pdf`);
   };
 
-  if (loading) return <Typography>Loading...</Typography>;
-  if (!report) return <Typography>Report not found</Typography>;
+  if (loading) return (
+    <Box sx={{ 
+      minHeight: '60vh', 
+      display: 'flex', 
+      alignItems: 'center', 
+      justifyContent: 'center' 
+    }}>
+      <Stack alignItems="center" spacing={2}>
+        <Box sx={{ 
+          width: 56, 
+          height: 56, 
+          borderRadius: '16px', 
+          background: '#303030',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          animation: 'pulse 1.5s infinite',
+          '@keyframes pulse': {
+            '0%, 100%': { opacity: 1 },
+            '50%': { opacity: 0.5 },
+          },
+        }}>
+          <AssessmentIcon sx={{ color: '#fff', fontSize: 28 }} />
+        </Box>
+        <Typography color="text.secondary">Loading Report...</Typography>
+      </Stack>
+    </Box>
+  );
+  if (!report) return (
+    <Box sx={{ 
+      minHeight: '60vh', 
+      display: 'flex', 
+      alignItems: 'center', 
+      justifyContent: 'center' 
+    }}>
+      <Stack alignItems="center" spacing={2}>
+        <AssessmentIcon sx={{ fontSize: 48, color: 'text.disabled' }} />
+        <Typography color="text.secondary">Report not found</Typography>
+        <Button 
+          variant="contained"
+          onClick={() => navigate('/reports')}
+          sx={{
+            background: '#303030',
+            borderRadius: '12px',
+          }}
+        >
+          Back to Reports
+        </Button>
+      </Stack>
+    </Box>
+  );
 
   const handleExportMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
     setExportMenuAnchor(event.currentTarget);
@@ -199,29 +249,70 @@ const ReportView: React.FC = () => {
   };
 
   return (
-    <Box sx={{ pb: isMobile ? 2 : 0 }}>
+    <Box sx={{ pb: isMobile ? 2 : 0, minHeight: '100vh' }}>
       {/* Mobile Header */}
       {isMobile ? (
-        <Box sx={{ mb: 2 }}>
-          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
-            <IconButton onClick={() => navigate('/reports')} size="small">
-              <CloseIcon />
+        <Box sx={{ mb: 2, px: 1 }}>
+          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
+            <IconButton 
+              onClick={() => navigate('/reports')} 
+              size="small"
+              sx={{ 
+                bgcolor: alpha('#667eea', 0.1),
+                '&:hover': { bgcolor: alpha('#667eea', 0.2) },
+              }}
+            >
+              <CloseIcon sx={{ color: '#667eea' }} />
             </IconButton>
-            <Typography variant="h6" sx={{ flex: 1, textAlign: 'center', mx: 1 }} noWrap>
-              {report.name}
-            </Typography>
-            <IconButton onClick={() => navigate(`/reports/builder/${report.id}`)} size="small">
-              <EditIcon />
+            <Stack direction="row" alignItems="center" spacing={1} sx={{ flex: 1, mx: 1.5, minWidth: 0 }}>
+              <Box sx={{ 
+                width: 36, 
+                height: 36, 
+                borderRadius: '10px', 
+                background: '#303030',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}>
+                <AssessmentIcon sx={{ color: '#fff', fontSize: 18 }} />
+              </Box>
+              <Typography variant="subtitle1" sx={{ fontWeight: 600 }} noWrap>
+                {report.name}
+              </Typography>
+            </Stack>
+            <IconButton 
+              onClick={() => navigate(`/reports/builder/${report.id}`)} 
+              size="small"
+              sx={{ 
+                bgcolor: alpha('#667eea', 0.1),
+                '&:hover': { bgcolor: alpha('#667eea', 0.2) },
+              }}
+            >
+              <EditIcon sx={{ color: '#667eea', fontSize: 20 }} />
             </IconButton>
           </Stack>
           
           {/* View mode toggle and export */}
-          <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+          <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}>
             <ToggleButtonGroup
               value={mobileViewMode}
               exclusive
               onChange={(_, v) => v && setMobileViewMode(v)}
               size="small"
+              sx={{
+                '& .MuiToggleButton-root': {
+                  borderRadius: '10px',
+                  border: '1px solid',
+                  borderColor: alpha('#667eea', 0.2),
+                  '&.Mui-selected': {
+                    bgcolor: alpha('#667eea', 0.15),
+                    color: '#667eea',
+                    borderColor: alpha('#667eea', 0.4),
+                    '&:hover': { bgcolor: alpha('#667eea', 0.2) },
+                  },
+                },
+              }}
             >
               <ToggleButton value="cards" aria-label="cards view">
                 <ViewModuleIcon fontSize="small" />
@@ -238,14 +329,37 @@ const ReportView: React.FC = () => {
               size="small" 
               startIcon={<DownloadIcon />}
               onClick={handleExportMenuOpen}
+              sx={{ 
+                borderRadius: '10px',
+                borderColor: alpha('#667eea', 0.3),
+                color: '#667eea',
+                textTransform: 'none',
+                '&:hover': {
+                  borderColor: '#667eea',
+                  bgcolor: alpha('#667eea', 0.05),
+                },
+              }}
             >
               Export
             </Button>
           </Stack>
           
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mb: 1 }}>
-            {rows.length} records
-          </Typography>
+          <Paper
+            elevation={0}
+            sx={{ 
+              p: 1, 
+              mb: 1.5, 
+              borderRadius: '10px',
+              bgcolor: alpha('#667eea', 0.05),
+              border: '1px solid',
+              borderColor: alpha('#667eea', 0.1),
+              textAlign: 'center',
+            }}
+          >
+            <Typography variant="body2" sx={{ fontWeight: 500 }}>
+              {rows.length} records
+            </Typography>
+          </Paper>
           
           <Menu
             anchorEl={exportMenuAnchor}
@@ -264,99 +378,243 @@ const ReportView: React.FC = () => {
           </Menu>
         </Box>
       ) : (
-        <PageHeader
-          title={report.name}
-          actions={(
-            <>
-              <Button onClick={()=>navigate(`/reports/builder/${report.id}`)}>Edit</Button>
-              <Button variant="outlined" onClick={downloadCSV}>Export CSV</Button>
-              <Button variant="outlined" onClick={exportXLSX}>Export XLSX</Button>
-              <Button variant="outlined" onClick={exportPDF}>Export PDF</Button>
-              <Button onClick={()=>navigate('/reports')}>Close</Button>
-            </>
-          )}
-        />
+        /* Desktop Header */
+        <Box sx={{ mb: 3, px: 1 }}>
+          <Stack direction="row" justifyContent="space-between" alignItems="center">
+            <Stack direction="row" alignItems="center" spacing={2}>
+              <Box sx={{ 
+                width: 56, 
+                height: 56, 
+                borderRadius: '16px', 
+                background: '#303030',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 8px 24px rgba(102, 126, 234, 0.35)',
+              }}>
+                <AssessmentIcon sx={{ color: '#fff', fontSize: 28 }} />
+              </Box>
+              <Box>
+                <Typography variant="h4" sx={{ fontWeight: 700, color: screenshotColors.darkText }}>{report.name}</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {rows.length} records • {report.reportType}
+                </Typography>
+              </Box>
+            </Stack>
+            <Stack direction="row" spacing={1.5} alignItems="center">
+              <Button 
+                variant="outlined"
+                startIcon={<EditIcon />}
+                onClick={() => navigate(`/reports/builder/${report.id}`)}
+                sx={{ 
+                  borderRadius: '12px', 
+                  textTransform: 'none',
+                  borderColor: alpha('#667eea', 0.3),
+                  color: '#667eea',
+                }}
+              >
+                Edit
+              </Button>
+              <Button 
+                variant="outlined" 
+                onClick={downloadCSV}
+                sx={{ 
+                  borderRadius: '12px', 
+                  textTransform: 'none',
+                  borderColor: alpha('#667eea', 0.3),
+                }}
+              >
+                CSV
+              </Button>
+              <Button 
+                variant="outlined" 
+                onClick={exportXLSX}
+                sx={{ 
+                  borderRadius: '12px', 
+                  textTransform: 'none',
+                  borderColor: alpha('#667eea', 0.3),
+                }}
+              >
+                XLSX
+              </Button>
+              <Button 
+                variant="outlined" 
+                onClick={exportPDF}
+                sx={{ 
+                  borderRadius: '12px', 
+                  textTransform: 'none',
+                  borderColor: alpha('#667eea', 0.3),
+                }}
+              >
+                PDF
+              </Button>
+              <Button 
+                variant="contained"
+                onClick={() => navigate('/reports')}
+                sx={{
+                  background: '#303030',
+                  borderRadius: '12px',
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  boxShadow: '0 4px 14px rgba(102, 126, 234, 0.4)',
+                }}
+              >
+                Close
+              </Button>
+            </Stack>
+          </Stack>
+        </Box>
       )}
 
       {/* Charts */}
       {chartDataList.length > 0 && chartDataList.map((data, idx) => (
-        <Paper key={idx} sx={{ height: isMobile ? 280 : 360, mb: 2, p: 1 }} elevation={0} variant="outlined">
-          <Typography variant="subtitle2" sx={{ px: 1, py: 0.5 }}>{chartConfigs[idx]?.title || `Chart ${idx + 1}`}</Typography>
-          <ResponsiveContainer width="100%" height="85%">
-            {(() => {
-              const t = (chartConfigs[idx]?.type || 'bar') as any;
-              if (t === 'line') {
-                return (
-                  <LineChart data={data}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="group" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Line type="monotone" dataKey="value" stroke="#1976d2" dot={false} />
-                  </LineChart>
-                );
-              }
-              if (t === 'pie' || t === 'donut') {
-                return (
-                  <PieChart>
-                    <Tooltip />
-                    <Legend />
-                    <Pie data={data} dataKey="value" nameKey="group" innerRadius={t==='donut'?70:0} outerRadius={120} label>
-                      {data.map((_entry: any, i: number) => (
-                        <Cell key={`cell-${i}`} fill={['#1976d2','#9c27b0','#ff9800','#4caf50','#f44336'][i % 5]} />
-                      ))}
-                    </Pie>
-                  </PieChart>
-                );
-              }
-              if (t === 'funnel') {
-                return (
-                  <FunnelChart margin={{ top: 10, right: 24, bottom: 10, left: 10 }}>
-                    <Tooltip />
-                    <Legend />
-                    <Funnel dataKey="value" nameKey="group" data={data} fill="#1976d2">
-                      <LabelList dataKey="group" position="right" fill="#333333" />
-                    </Funnel>
-                  </FunnelChart>
-                );
-              }
-              if (t === 'table') {
-                return (
-                  <Box sx={{ p: 1 }}>
-                    <Box component="table" sx={{ width:'100%', borderCollapse:'collapse' }}>
-                      <Box component="thead">
-                        <Box component="tr">
-                          <Box component="th" sx={{ textAlign:'left', borderBottom: '1px solid', borderColor:'divider', pr:2 }}>Group</Box>
-                          <Box component="th" sx={{ textAlign:'right', borderBottom: '1px solid', borderColor:'divider' }}>Value</Box>
+        <Paper 
+          key={idx} 
+          elevation={0}
+          sx={{ 
+            mb: 2, 
+            borderRadius: '16px',
+            border: '1px solid',
+            borderColor: alpha('#667eea', 0.15),
+            overflow: 'hidden',
+            bgcolor: 'rgba(255,255,255,0.9)',
+            mx: isMobile ? 1 : 0,
+          }}
+        >
+          <Box sx={{ p: 1.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+              {chartConfigs[idx]?.title || `Chart ${idx + 1}`}
+            </Typography>
+          </Box>
+          <Box 
+            sx={{ 
+              height: isMobile ? 280 : 340,
+              bgcolor: screenshotColors.darkBg,
+              p: isMobile ? 1.5 : 2,
+            }}
+          >
+            <ResponsiveContainer width="100%" height="100%">
+              {(() => {
+                const t = (chartConfigs[idx]?.type || 'bar') as any;
+                const gradientId = `report-chart-gradient-${idx}`;
+                
+                if (t === 'line') {
+                  return (
+                    <LineChart data={data}>
+                      <defs>
+                        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#88d8f0" />
+                          <stop offset="50%" stopColor="#c8f0a0" />
+                          <stop offset="100%" stopColor="#f0f8a0" />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+                      <XAxis dataKey="group" stroke="rgba(255,255,255,0.6)" />
+                      <YAxis stroke="rgba(255,255,255,0.6)" />
+                      <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', border: 'none', borderRadius: 8 }} />
+                      <Legend />
+                      <Line 
+                        type="monotone" 
+                        dataKey="value" 
+                        stroke={`url(#${gradientId})`}
+                        strokeWidth={3}
+                        dot={{ fill: '#88d8f0', strokeWidth: 0 }} 
+                      />
+                    </LineChart>
+                  );
+                }
+                if (t === 'pie' || t === 'donut') {
+                  return (
+                    <PieChart>
+                      <defs>
+                        <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
+                          <stop offset="0%" stopColor="#88d8f0" />
+                          <stop offset="50%" stopColor="#c8f0a0" />
+                          <stop offset="100%" stopColor="#f0f8a0" />
+                        </linearGradient>
+                      </defs>
+                      <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', border: 'none', borderRadius: 8 }} />
+                      <Legend />
+                      <Pie 
+                        data={data} 
+                        dataKey="value" 
+                        nameKey="group" 
+                        innerRadius={t === 'donut' ? (isMobile ? 50 : 70) : 0} 
+                        outerRadius={isMobile ? 90 : 120} 
+                        label
+                      >
+                        {data.map((_entry: any, i: number) => (
+                          <Cell key={`cell-${i}`} fill={['#88d8f0', '#c8f0a0', '#f0f8a0', '#ff9f7f', '#87cefa'][i % 5]} />
+                        ))}
+                      </Pie>
+                    </PieChart>
+                  );
+                }
+                if (t === 'funnel') {
+                  return (
+                    <FunnelChart margin={{ top: 10, right: 24, bottom: 10, left: 10 }}>
+                      <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', border: 'none', borderRadius: 8 }} />
+                      <Funnel dataKey="value" nameKey="group" data={data}>
+                        {data.map((_entry: any, i: number) => (
+                          <Cell key={`cell-${i}`} fill={['#88d8f0', '#c8f0a0', '#f0f8a0', '#ff9f7f', '#87cefa'][i % 5]} />
+                        ))}
+                        <LabelList dataKey="group" position="right" fill="rgba(255,255,255,0.8)" />
+                      </Funnel>
+                    </FunnelChart>
+                  );
+                }
+                if (t === 'table') {
+                  return (
+                    <Box sx={{ p: 1, height: '100%', overflow: 'auto' }}>
+                      <Box component="table" sx={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <Box component="thead">
+                          <Box component="tr">
+                            <Box component="th" sx={{ textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.2)', pr: 2, color: 'rgba(255,255,255,0.9)', py: 0.5 }}>Group</Box>
+                            <Box component="th" sx={{ textAlign: 'right', borderBottom: '1px solid rgba(255,255,255,0.2)', color: 'rgba(255,255,255,0.9)', py: 0.5 }}>Value</Box>
+                          </Box>
+                        </Box>
+                        <Box component="tbody">
+                          {data.map((r: any, i: number) => (
+                            <Box key={i} component="tr">
+                              <Box component="td" sx={{ py: 0.5, pr: 2, color: 'rgba(255,255,255,0.8)' }}>{String(r.group)}</Box>
+                              <Box component="td" sx={{ py: 0.5, textAlign: 'right', color: '#c8f0a0', fontWeight: 600 }}>{Number(r.value)}</Box>
+                            </Box>
+                          ))}
                         </Box>
                       </Box>
-                      <Box component="tbody">
-                        {data.map((r:any, i:number) => (
-                          <Box key={i} component="tr">
-                            <Box component="td" sx={{ py:0.5, pr:2 }}>{String(r.group)}</Box>
-                            <Box component="td" sx={{ py:0.5, textAlign:'right' }}>{Number(r.value)}</Box>
-                          </Box>
-                        ))}
-                      </Box>
                     </Box>
-                  </Box>
+                  );
+                }
+                // Default: Bar chart with gradient
+                return (
+                  <BarChart data={data}>
+                    <defs>
+                      <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#88d8f0" />
+                        <stop offset="50%" stopColor="#c8f0a0" />
+                        <stop offset="100%" stopColor="#f0f8a0" />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+                    <XAxis dataKey="group" stroke="rgba(255,255,255,0.6)" />
+                    <YAxis stroke="rgba(255,255,255,0.6)" />
+                    <Tooltip contentStyle={{ backgroundColor: '#1a1a2e', border: 'none', borderRadius: 8 }} />
+                    <Legend />
+                    <Bar 
+                      dataKey="value" 
+                      fill={`url(#${gradientId})`}
+                      name="Value"
+                      radius={[4, 4, 0, 0]}
+                    />
+                  </BarChart>
                 );
-              }
-              return (
-                <BarChart data={data}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="group" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  <Bar dataKey="value" fill="#1976d2" name="Value" />
-                </BarChart>
-              );
-            })()}
-          </ResponsiveContainer>
+              })()}
+            </ResponsiveContainer>
+          </Box>
           {(!data || data.length === 0) && (
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 1, px: 1 }}>No data for this chart selection.</Typography>
+            <Box sx={{ p: 2, textAlign: 'center' }}>
+              <Typography variant="body2" color="text.secondary">No data for this chart selection.</Typography>
+            </Box>
           )}
         </Paper>
       ))}

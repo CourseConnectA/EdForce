@@ -64,6 +64,11 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:3001',
         changeOrigin: true,
+        // Ensure cookies are properly forwarded through proxy
+        cookieDomainRewrite: '',
+        cookiePathRewrite: {
+          '*': '/',
+        },
       },
     },
   },

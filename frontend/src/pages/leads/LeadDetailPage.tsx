@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { Box, Typography, Button, Grid, Paper, Chip, Stack, Divider, TextField, MenuItem, Table, TableBody, TableCell, TableHead, TableRow, Tooltip, TableContainer, useMediaQuery } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import { Phone as PhoneIcon } from '@mui/icons-material';
+import { Phone as PhoneIcon, PhoneCallback as PhoneIncomingIcon, PhoneForwarded as PhoneOutgoingIcon, PhoneMissed as PhoneMissedIcon } from '@mui/icons-material';
 import { RootState } from '../../store/store';
 import leadSettingsService, { LeadFieldSetting } from '../../services/leadSettingsService';
 import leadsService, { Lead } from '../../services/leadsService';
@@ -43,6 +43,20 @@ const deriveStatusColor = (
   if (['missed', 'failed', 'not connected', 'no answer', 'busy'].includes(value)) return 'error';
   if (['follow-up', 'scheduled', 'retry'].includes(value)) return 'warning';
   return 'default';
+};
+
+const getCallDirectionDisplay = (callType?: string) => {
+  const type = String(callType || '').toLowerCase();
+  if (type === 'incoming') {
+    return { label: 'Inbound', icon: <PhoneIncomingIcon fontSize="small" sx={{ color: 'info.main' }} />, color: 'info' as const };
+  }
+  if (type === 'outgoing') {
+    return { label: 'Outbound', icon: <PhoneOutgoingIcon fontSize="small" sx={{ color: 'success.main' }} />, color: 'success' as const };
+  }
+  if (type === 'missed') {
+    return { label: 'Missed', icon: <PhoneMissedIcon fontSize="small" sx={{ color: 'error.main' }} />, color: 'error' as const };
+  }
+  return { label: '-', icon: null, color: 'default' as const };
 };
 
 const LeadDetailPage: React.FC = () => {
@@ -283,6 +297,7 @@ const LeadDetailPage: React.FC = () => {
           <Stack spacing={1.5}>
             {callLogs.map((log) => {
               const roleLabel = titleCase(log.userRoleLabel || log.userRole) || '-';
+              const direction = getCallDirectionDisplay((log as any).callType);
               return (
                 <Paper key={log.id} variant="outlined" sx={{ p: 1.5 }}>
                   <Stack spacing={1}>
@@ -293,6 +308,10 @@ const LeadDetailPage: React.FC = () => {
                         size="small"
                         color={deriveStatusColor(log.status || log.disposition)}
                       />
+                    </Stack>
+                    <Stack direction="row" alignItems="center" spacing={0.5}>
+                      {direction.icon}
+                      <Typography variant="body2"><strong>Direction:</strong> {direction.label}</Typography>
                     </Stack>
                     <Typography variant="body2"><strong>Phone:</strong> {log.phoneNumber}</Typography>
                     <Typography variant="body2"><strong>Duration:</strong> {formatDuration(log.duration)}</Typography>
@@ -312,6 +331,7 @@ const LeadDetailPage: React.FC = () => {
               <TableHead>
                 <TableRow>
                   <TableCell>Date & Time</TableCell>
+                  <TableCell>Direction</TableCell>
                   <TableCell>Phone Number</TableCell>
                   <TableCell>Duration</TableCell>
                   <TableCell>Status</TableCell>
@@ -321,36 +341,45 @@ const LeadDetailPage: React.FC = () => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {callLogs.map((log) => (
-                  <TableRow key={log.id}>
-                    <TableCell>{new Date(log.startTime).toLocaleString()}</TableCell>
-                    <TableCell>{log.phoneNumber}</TableCell>
-                    <TableCell>{formatDuration(log.duration)}</TableCell>
-                    <TableCell>
-                      <Chip
-                        label={log.status || log.disposition || '-'}
-                        size="small"
-                        color={deriveStatusColor(log.status || log.disposition)}
-                      />
-                    </TableCell>
-                    <TableCell>{log.userName || '-'}</TableCell>
-                    <TableCell>{titleCase(log.userRoleLabel || log.userRole) || '-'}</TableCell>
-                    <TableCell>
-                      {log.notes ? (
-                        <Tooltip title={log.notes} arrow>
-                          <Typography
-                            variant="body2"
-                            sx={{ maxWidth: 240, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
-                          >
-                            {log.notes}
-                          </Typography>
-                        </Tooltip>
-                      ) : (
-                        '-'
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {callLogs.map((log) => {
+                  const direction = getCallDirectionDisplay((log as any).callType);
+                  return (
+                    <TableRow key={log.id}>
+                      <TableCell>{new Date(log.startTime).toLocaleString()}</TableCell>
+                      <TableCell>
+                        <Stack direction="row" alignItems="center" spacing={0.5}>
+                          {direction.icon}
+                          <Typography variant="body2">{direction.label}</Typography>
+                        </Stack>
+                      </TableCell>
+                      <TableCell>{log.phoneNumber}</TableCell>
+                      <TableCell>{formatDuration(log.duration)}</TableCell>
+                      <TableCell>
+                        <Chip
+                          label={log.status || log.disposition || '-'}
+                          size="small"
+                          color={deriveStatusColor(log.status || log.disposition)}
+                        />
+                      </TableCell>
+                      <TableCell>{log.userName || '-'}</TableCell>
+                      <TableCell>{titleCase(log.userRoleLabel || log.userRole) || '-'}</TableCell>
+                      <TableCell>
+                        {log.notes ? (
+                          <Tooltip title={log.notes} arrow>
+                            <Typography
+                              variant="body2"
+                              sx={{ maxWidth: 240, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                            >
+                              {log.notes}
+                            </Typography>
+                          </Tooltip>
+                        ) : (
+                          '-'
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </TableContainer>

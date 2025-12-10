@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import {
   Box,
   Typography,
@@ -11,10 +11,21 @@ import {
   IconButton,
   useMediaQuery,
   useTheme,
+  Stack,
+  Tooltip as MuiTooltip,
+  Paper,
 } from '@mui/material';
 import Select, { SelectChangeEvent } from '@mui/material/Select';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
-import callsService, { CallAnalytics } from '@/services/callsService';
+import CallMadeIcon from '@mui/icons-material/CallMade';
+import CallReceivedIcon from '@mui/icons-material/CallReceived';
+import BarChartIcon from '@mui/icons-material/BarChart';
+import AlignHorizontalLeftIcon from '@mui/icons-material/AlignHorizontalLeft';
+import ShowChartIcon from '@mui/icons-material/ShowChart';
+import PieChartIcon from '@mui/icons-material/PieChart';
+import DonutLargeIcon from '@mui/icons-material/DonutLarge';
+import callsService, { CallAnalyticsResponse } from '@/services/callsService';
+import webSocketService from '@/services/webSocketService';
 import {
   ResponsiveContainer,
   BarChart,
@@ -34,11 +45,18 @@ import { startOfDay, endOfDay, subDays, startOfMonth, endOfMonth, subMonths } fr
 import { screenshotColors } from '@/theme/theme';
 
 type TimeRange = 'today' | 'last7' | 'last15' | 'currentMonth' | 'lastMonth' | 'custom';
+type ChartType = 'horizontal' | 'vertical' | 'line' | 'pie' | 'donut';
 
 interface CallAnalyticsWidgetProps {
   period?: 'daily' | 'monthly';
   startDate?: string;
   endDate?: string;
+  /** Use icon buttons instead of dropdown for chart type selection */
+  useChartTypeIcons?: boolean;
+  /** Show page header (for standalone page usage) */
+  showPageHeader?: boolean;
+  /** Page title (when showPageHeader is true) */
+  pageTitle?: string;
 }
 
 interface RangeConfig {
@@ -93,14 +111,21 @@ const formatDuration = (seconds: number): string => {
   return `${secs}s`;
 };
 
-const CallAnalyticsWidget: React.FC<CallAnalyticsWidgetProps> = ({ period: _period = 'daily', startDate, endDate }) => {
-  const [analytics, setAnalytics] = useState<CallAnalytics[]>([]);
+const CallAnalyticsWidget: React.FC<CallAnalyticsWidgetProps> = ({ 
+  period: _period = 'daily', 
+  startDate, 
+  endDate,
+  useChartTypeIcons = false,
+  showPageHeader = false,
+  pageTitle = 'Call Management',
+}) => {
+  const [analyticsData, setAnalyticsData] = useState<CallAnalyticsResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [timeRange, setTimeRange] = useState<TimeRange>('today');
   const [selectedActors, setSelectedActors] = useState<string[]>([]);
   const [customStart, setCustomStart] = useState<string>('');
   const [customEnd, setCustomEnd] = useState<string>('');
-  const [chartType, setChartType] = useState<string>('horizontal');
+  const [chartType, setChartType] = useState<ChartType>('horizontal');
   
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
@@ -115,30 +140,61 @@ const CallAnalyticsWidget: React.FC<CallAnalyticsWidgetProps> = ({ period: _peri
 
   const rangeConfig = useMemo(() => resolveRange(timeRange, customStart, customEnd), [timeRange, customStart, customEnd]);
 
-  useEffect(() => {
-    const fetchAnalytics = async () => {
-      if (!rangeConfig.ready) {
-        setLoading(false);
-        setAnalytics([]);
-        return;
-      }
-      setLoading(true);
-      try {
-        const data = await callsService.getAnalytics({
-          period: rangeConfig.period,
-          startDate: rangeConfig.startISO,
-          endDate: rangeConfig.endISO,
-        });
-        setAnalytics(data || []);
-      } catch (error) {
-        console.error('Failed to load call analytics:', error);
-        setAnalytics([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-    void fetchAnalytics();
+  // Fetch analytics function - extracted for reuse
+  const fetchAnalytics = useCallback(async () => {
+    if (!rangeConfig.ready) {
+      setLoading(false);
+      setAnalyticsData(null);
+      return;
+    }
+    setLoading(true);
+    try {
+      const data = await callsService.getAnalytics({
+        period: rangeConfig.period,
+        startDate: rangeConfig.startISO,
+        endDate: rangeConfig.endISO,
+      });
+      setAnalyticsData(data);
+    } catch (error) {
+      console.error('Failed to load call analytics:', error);
+      setAnalyticsData(null);
+    } finally {
+      setLoading(false);
+    }
   }, [rangeConfig.startISO, rangeConfig.endISO, rangeConfig.ready, rangeConfig.period]);
+
+  // Initial fetch and refetch on range change
+  useEffect(() => {
+    void fetchAnalytics();
+  }, [fetchAnalytics]);
+
+  // Listen for real-time call updates via WebSocket
+  useEffect(() => {
+    let debounceTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    const handleCallLogged = () => {
+      console.log('📊 Call logged - refreshing analytics...');
+      // Debounce rapid updates during bulk sync
+      if (debounceTimeout) {
+        clearTimeout(debounceTimeout);
+      }
+      debounceTimeout = setTimeout(() => {
+        void fetchAnalytics();
+        debounceTimeout = null;
+      }, 500);
+    };
+
+    webSocketService.on('call:logged', handleCallLogged);
+    return () => {
+      if (debounceTimeout) {
+        clearTimeout(debounceTimeout);
+      }
+      webSocketService.off('call:logged', handleCallLogged);
+    };
+  }, [fetchAnalytics]);
+
+  const analytics = analyticsData?.breakdown || [];
+  const summary = analyticsData?.summary;
 
   const analyticsRows = useMemo(
     () => analytics.map((item, idx) => ({
@@ -170,15 +226,52 @@ const CallAnalyticsWidget: React.FC<CallAnalyticsWidgetProps> = ({ period: _peri
 
   // Totals from real API data only
   const totals = useMemo(() => {
+    if (summary) {
+      return {
+        totalCalls: summary.totalCalls,
+        totalDuration: summary.totalDuration,
+        totalInbound: summary.totalInbound,
+        totalOutbound: summary.totalOutbound,
+        totalAnswered: summary.totalAnswered,
+        totalUnanswered: summary.totalUnanswered,
+        inboundAnswered: summary.inboundAnswered,
+        inboundUnanswered: summary.inboundUnanswered,
+        outboundAnswered: summary.outboundAnswered,
+        outboundUnanswered: summary.outboundUnanswered,
+        uniqueAnswered: summary.uniqueAnswered,
+        uniqueUnanswered: summary.uniqueUnanswered,
+        uniqueInboundAnswered: summary.uniqueInboundAnswered,
+        uniqueInboundUnanswered: summary.uniqueInboundUnanswered,
+        uniqueOutboundAnswered: summary.uniqueOutboundAnswered,
+        uniqueOutboundUnanswered: summary.uniqueOutboundUnanswered,
+      };
+    }
     return filteredRows.reduce(
       (acc, row) => {
         acc.totalCalls += row.data.totalCalls;
         acc.totalDuration += row.data.totalDuration;
         return acc;
       },
-      { totalCalls: 0, totalDuration: 0 },
+      { 
+        totalCalls: 0, 
+        totalDuration: 0,
+        totalInbound: 0,
+        totalOutbound: 0,
+        totalAnswered: 0,
+        totalUnanswered: 0,
+        inboundAnswered: 0,
+        inboundUnanswered: 0,
+        outboundAnswered: 0,
+        outboundUnanswered: 0,
+        uniqueAnswered: 0,
+        uniqueUnanswered: 0,
+        uniqueInboundAnswered: 0,
+        uniqueInboundUnanswered: 0,
+        uniqueOutboundAnswered: 0,
+        uniqueOutboundUnanswered: 0,
+      },
     );
-  }, [filteredRows]);
+  }, [filteredRows, summary]);
 
   const averageDuration = totals.totalCalls > 0 ? Math.round(totals.totalDuration / totals.totalCalls) : 0;
   const teamCount = filteredRows.length;
@@ -231,8 +324,39 @@ const CallAnalyticsWidget: React.FC<CallAnalyticsWidgetProps> = ({ period: _peri
     flexShrink: 0,
   };
 
+  // Chart type icons configuration
+  const chartTypeIcons: { type: ChartType; icon: React.ReactNode; label: string }[] = [
+    { type: 'horizontal', icon: <AlignHorizontalLeftIcon />, label: 'Horizontal Bar' },
+    { type: 'vertical', icon: <BarChartIcon />, label: 'Vertical Bar' },
+    { type: 'pie', icon: <PieChartIcon />, label: 'Pie Chart' },
+    { type: 'line', icon: <ShowChartIcon />, label: 'Line Chart' },
+    { type: 'donut', icon: <DonutLargeIcon />, label: 'Donut Chart' },
+  ];
+
   return (
     <Box>
+      {/* Page Header - only shown when used as standalone page */}
+      {showPageHeader && (
+        <Box sx={{ mb: 3 }}>
+          <Typography
+            sx={{ 
+              color: screenshotColors.darkText, 
+              fontSize: isMobile ? '1.75rem' : '2rem',
+              fontWeight: 700, 
+              lineHeight: 1.1,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1.5,
+            }}
+          >
+            {pageTitle}
+          </Typography>
+          <Typography sx={{ color: '#888', fontSize: '0.9rem', mt: 0.5 }}>
+            Monitor and analyze call performance across your team
+          </Typography>
+        </Box>
+      )}
+
       {/* Header Row */}
       <Box
         sx={{
@@ -350,49 +474,84 @@ const CallAnalyticsWidget: React.FC<CallAnalyticsWidgetProps> = ({ period: _peri
             </FormControl>
           </Box>
 
-          {/* Chart Type Dropdown */}
-          <Box sx={{ ...dropdownPillStyle }}>
-            <Typography sx={{ color: '#888', fontSize: isMobile ? '0.6rem' : '0.8rem', whiteSpace: 'nowrap', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {isMobile 
-                ? (chartType === 'horizontal' ? 'H-Bar' : 
-                   chartType === 'vertical' ? 'V-Bar' : 
-                   chartType === 'line' ? 'Line' :
-                   chartType === 'pie' ? 'Pie' :
-                   chartType === 'donut' ? 'Donut' : 'Chart')
-                : (chartType === 'horizontal' ? 'Horizontal Bar' : 
-                   chartType === 'vertical' ? 'Vertical Bar' : 
-                   chartType === 'line' ? 'Line Chart' :
-                   chartType === 'pie' ? 'Pie Chart' :
-                   chartType === 'donut' ? 'Donut Chart' : 'Chart Type')}
-            </Typography>
-            <IconButton sx={circleIconBtnStyle} size="small" disableRipple>
-              <KeyboardArrowDownIcon sx={{ color: '#666', fontSize: isMobile ? 18 : 22 }} />
-            </IconButton>
-            <FormControl 
-              size="small"
+          {/* Chart Type - Icons or Dropdown based on prop */}
+          {useChartTypeIcons ? (
+            <Paper 
+              elevation={0}
               sx={{ 
-                position: 'absolute', 
-                width: '100%', 
-                height: '100%', 
-                opacity: 0, 
-                left: 0, 
-                top: 0,
-                '& .MuiInputBase-root': { height: '100%' },
+                display: 'flex', 
+                gap: 0.5, 
+                p: 0.5,
+                borderRadius: '12px',
+                backgroundColor: '#f5f5f5',
               }}
             >
-              <Select
-                value={chartType}
-                onChange={(e) => setChartType(e.target.value)}
-                sx={{ width: '100%', height: '100%' }}
+              {chartTypeIcons.map((item) => (
+                <MuiTooltip key={item.type} title={item.label} arrow>
+                  <IconButton
+                    size="small"
+                    onClick={() => setChartType(item.type)}
+                    sx={{
+                      width: isMobile ? 36 : 42,
+                      height: isMobile ? 36 : 42,
+                      borderRadius: '10px',
+                      backgroundColor: chartType === item.type ? '#1976d2' : 'transparent',
+                      color: chartType === item.type ? '#fff' : '#666',
+                      transition: 'all 0.2s ease',
+                      '&:hover': {
+                        backgroundColor: chartType === item.type ? '#1565c0' : 'rgba(0,0,0,0.08)',
+                      },
+                    }}
+                  >
+                    {item.icon}
+                  </IconButton>
+                </MuiTooltip>
+              ))}
+            </Paper>
+          ) : (
+            <Box sx={{ ...dropdownPillStyle }}>
+              <Typography sx={{ color: '#888', fontSize: isMobile ? '0.6rem' : '0.8rem', whiteSpace: 'nowrap', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {isMobile 
+                  ? (chartType === 'horizontal' ? 'H-Bar' : 
+                     chartType === 'vertical' ? 'V-Bar' : 
+                     chartType === 'line' ? 'Line' :
+                     chartType === 'pie' ? 'Pie' :
+                     chartType === 'donut' ? 'Donut' : 'Chart')
+                  : (chartType === 'horizontal' ? 'Horizontal Bar' : 
+                     chartType === 'vertical' ? 'Vertical Bar' : 
+                     chartType === 'line' ? 'Line Chart' :
+                     chartType === 'pie' ? 'Pie Chart' :
+                     chartType === 'donut' ? 'Donut Chart' : 'Chart Type')}
+              </Typography>
+              <IconButton sx={circleIconBtnStyle} size="small" disableRipple>
+                <KeyboardArrowDownIcon sx={{ color: '#666', fontSize: isMobile ? 18 : 22 }} />
+              </IconButton>
+              <FormControl 
+                size="small"
+                sx={{ 
+                  position: 'absolute', 
+                  width: '100%', 
+                  height: '100%', 
+                  opacity: 0, 
+                  left: 0, 
+                  top: 0,
+                  '& .MuiInputBase-root': { height: '100%' },
+                }}
               >
-                <MenuItem value="horizontal">Horizontal Bar</MenuItem>
-                <MenuItem value="vertical">Vertical Bar</MenuItem>
-                <MenuItem value="line">Line Chart</MenuItem>
-                <MenuItem value="pie">Pie Chart</MenuItem>
-                <MenuItem value="donut">Donut Chart</MenuItem>
-              </Select>
-            </FormControl>
-          </Box>
+                <Select
+                  value={chartType}
+                  onChange={(e) => setChartType(e.target.value as ChartType)}
+                  sx={{ width: '100%', height: '100%' }}
+                >
+                  <MenuItem value="horizontal">Horizontal Bar</MenuItem>
+                  <MenuItem value="vertical">Vertical Bar</MenuItem>
+                  <MenuItem value="line">Line Chart</MenuItem>
+                  <MenuItem value="pie">Pie Chart</MenuItem>
+                  <MenuItem value="donut">Donut Chart</MenuItem>
+                </Select>
+              </FormControl>
+            </Box>
+          )}
         </Box>
       </Box>
 
@@ -641,55 +800,184 @@ const CallAnalyticsWidget: React.FC<CallAnalyticsWidgetProps> = ({ period: _peri
           )}
         </Box>
 
-        {/* Stats Row - Glassmorphism pill INSIDE the dark container */}
+        {/* Stats Row - Top summary stats */}
         <Box
           sx={{
             background: 'rgba(255, 255, 255, 0.15)',
             backdropFilter: 'blur(12px)',
             WebkitBackdropFilter: 'blur(12px)',
             border: '1px solid rgba(255, 255, 255, 0.2)',
-            borderRadius: isMobile ? '20px' : '60px',
-            py: isMobile ? 2 : 1,
-            px: isMobile ? 2 : 8,
-            display: 'grid',
-            gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
-            gap: isMobile ? 2 : 0,
-            justifyContent: 'space-between',
-            alignItems: 'center',
+            borderRadius: isMobile ? '16px' : '20px',
+            py: isMobile ? 1.5 : 2,
+            px: isMobile ? 2 : 3,
+            mb: 2,
           }}
         >
-        <Box sx={{ textAlign: 'left' }}>
-          <Typography sx={{ color: '#D8EFFE', fontSize: isMobile ? '0.85rem' : '1rem', mb: 0.25, fontWeight: 500 }}>
-            Total Calls
-          </Typography>
-          <Typography sx={{ color: screenshotColors.lightText, fontSize: isMobile ? '1.5rem' : '1.75rem', fontWeight: 600 }}>
-            {totals.totalCalls}
-          </Typography>
+          <Box sx={{ 
+            display: 'grid',
+            gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
+            gap: isMobile ? 1.5 : 2,
+          }}>
+            <Box sx={{ textAlign: 'center' }}>
+              <Typography sx={{ color: '#D8EFFE', fontSize: isMobile ? '0.7rem' : '0.85rem', mb: 0.25, fontWeight: 500 }}>
+                Total Calls
+              </Typography>
+              <Typography sx={{ color: screenshotColors.lightText, fontSize: isMobile ? '1.25rem' : '1.5rem', fontWeight: 600 }}>
+                {totals.totalCalls}
+              </Typography>
+            </Box>
+            <Box sx={{ textAlign: 'center' }}>
+              <Typography sx={{ color: '#D8EFFE', fontSize: isMobile ? '0.7rem' : '0.85rem', mb: 0.25, fontWeight: 500 }}>
+                Total Duration
+              </Typography>
+              <Typography sx={{ color: screenshotColors.lightText, fontSize: isMobile ? '1.25rem' : '1.5rem', fontWeight: 600 }}>
+                {formatDuration(totals.totalDuration)}
+              </Typography>
+            </Box>
+            <Box sx={{ textAlign: 'center' }}>
+              <Typography sx={{ color: '#D8EFFE', fontSize: isMobile ? '0.7rem' : '0.85rem', mb: 0.25, fontWeight: 500 }}>
+                Average Duration
+              </Typography>
+              <Typography sx={{ color: screenshotColors.lightText, fontSize: isMobile ? '1.25rem' : '1.5rem', fontWeight: 600 }}>
+                {formatDuration(averageDuration)}
+              </Typography>
+            </Box>
+            <Box sx={{ textAlign: 'center' }}>
+              <Typography sx={{ color: '#D8EFFE', fontSize: isMobile ? '0.7rem' : '0.85rem', mb: 0.25, fontWeight: 500 }}>
+                Team Members
+              </Typography>
+              <Typography sx={{ color: screenshotColors.lightText, fontSize: isMobile ? '1.25rem' : '1.5rem', fontWeight: 600 }}>
+                {teamCount}
+              </Typography>
+            </Box>
+          </Box>
         </Box>
-        <Box sx={{ textAlign: 'left' }}>
-          <Typography sx={{ color: '#D8EFFE', fontSize: isMobile ? '0.85rem' : '1rem', mb: 0.25, fontWeight: 500 }}>
-            Total Duration
-          </Typography>
-          <Typography sx={{ color: screenshotColors.lightText, fontSize: isMobile ? '1.5rem' : '1.75rem', fontWeight: 600 }}>
-            {formatDuration(totals.totalDuration)}
-          </Typography>
-        </Box>
-        <Box sx={{ textAlign: 'left' }}>
-          <Typography sx={{ color: '#D8EFFE', fontSize: isMobile ? '0.85rem' : '1rem', mb: 0.25, fontWeight: 500 }}>
-            Average Duration
-          </Typography>
-          <Typography sx={{ color: screenshotColors.lightText, fontSize: isMobile ? '1.5rem' : '1.75rem', fontWeight: 600 }}>
-            {formatDuration(averageDuration)}
-          </Typography>
-        </Box>
-        <Box sx={{ textAlign: 'left' }}>
-          <Typography sx={{ color: '#D8EFFE', fontSize: isMobile ? '0.85rem' : '1rem', mb: 0.25, fontWeight: 500 }}>
-            Team Members Count
-          </Typography>
-          <Typography sx={{ color: screenshotColors.lightText, fontSize: isMobile ? '1.5rem' : '1.75rem', fontWeight: 600 }}>
-            {teamCount}
-          </Typography>
-        </Box>
+
+        {/* Direction Stats - Inbound/Outbound with Answered/Unanswered */}
+        <Box sx={{ 
+          display: 'grid',
+          gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
+          gap: 2,
+        }}>
+          {/* Outbound Calls */}
+          <Box
+            sx={{
+              background: 'rgba(255, 255, 255, 0.1)',
+              borderRadius: '16px',
+              p: isMobile ? 1.5 : 2,
+            }}
+          >
+            <Stack direction="row" alignItems="center" gap={1} sx={{ mb: 1.5 }}>
+              <CallMadeIcon sx={{ color: '#4caf50', fontSize: isMobile ? 20 : 24 }} />
+              <Typography sx={{ color: '#fff', fontSize: isMobile ? '0.9rem' : '1rem', fontWeight: 600 }}>
+                Outbound Calls
+              </Typography>
+              <Chip 
+                label={totals.totalOutbound} 
+                size="small"
+                sx={{ 
+                  bgcolor: 'rgba(76, 175, 80, 0.3)', 
+                  color: '#4caf50',
+                  fontWeight: 600,
+                  fontSize: isMobile ? '0.75rem' : '0.85rem',
+                }}
+              />
+            </Stack>
+            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 1.5 }}>
+              <Box sx={{ 
+                bgcolor: 'rgba(76, 175, 80, 0.15)', 
+                borderRadius: '12px', 
+                p: 1.5,
+                textAlign: 'center',
+              }}>
+                <Typography sx={{ color: 'rgba(255,255,255,0.7)', fontSize: isMobile ? '0.65rem' : '0.75rem', mb: 0.5 }}>
+                  Answered
+                </Typography>
+                <Typography sx={{ color: '#4caf50', fontSize: isMobile ? '1.1rem' : '1.25rem', fontWeight: 700 }}>
+                  {totals.outboundAnswered}
+                </Typography>
+                <Typography sx={{ color: 'rgba(255,255,255,0.5)', fontSize: isMobile ? '0.6rem' : '0.7rem', mt: 0.5 }}>
+                  Unique: {totals.uniqueOutboundAnswered}
+                </Typography>
+              </Box>
+              <Box sx={{ 
+                bgcolor: 'rgba(244, 67, 54, 0.15)', 
+                borderRadius: '12px', 
+                p: 1.5,
+                textAlign: 'center',
+              }}>
+                <Typography sx={{ color: 'rgba(255,255,255,0.7)', fontSize: isMobile ? '0.65rem' : '0.75rem', mb: 0.5 }}>
+                  Unanswered
+                </Typography>
+                <Typography sx={{ color: '#f44336', fontSize: isMobile ? '1.1rem' : '1.25rem', fontWeight: 700 }}>
+                  {totals.outboundUnanswered}
+                </Typography>
+                <Typography sx={{ color: 'rgba(255,255,255,0.5)', fontSize: isMobile ? '0.6rem' : '0.7rem', mt: 0.5 }}>
+                  Unique: {totals.uniqueOutboundUnanswered}
+                </Typography>
+              </Box>
+            </Box>
+          </Box>
+
+          {/* Inbound Calls */}
+          <Box
+            sx={{
+              background: 'rgba(255, 255, 255, 0.1)',
+              borderRadius: '16px',
+              p: isMobile ? 1.5 : 2,
+            }}
+          >
+            <Stack direction="row" alignItems="center" gap={1} sx={{ mb: 1.5 }}>
+              <CallReceivedIcon sx={{ color: '#2196f3', fontSize: isMobile ? 20 : 24 }} />
+              <Typography sx={{ color: '#fff', fontSize: isMobile ? '0.9rem' : '1rem', fontWeight: 600 }}>
+                Inbound Calls
+              </Typography>
+              <Chip 
+                label={totals.totalInbound} 
+                size="small"
+                sx={{ 
+                  bgcolor: 'rgba(33, 150, 243, 0.3)', 
+                  color: '#2196f3',
+                  fontWeight: 600,
+                  fontSize: isMobile ? '0.75rem' : '0.85rem',
+                }}
+              />
+            </Stack>
+            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 1.5 }}>
+              <Box sx={{ 
+                bgcolor: 'rgba(33, 150, 243, 0.15)', 
+                borderRadius: '12px', 
+                p: 1.5,
+                textAlign: 'center',
+              }}>
+                <Typography sx={{ color: 'rgba(255,255,255,0.7)', fontSize: isMobile ? '0.65rem' : '0.75rem', mb: 0.5 }}>
+                  Answered
+                </Typography>
+                <Typography sx={{ color: '#2196f3', fontSize: isMobile ? '1.1rem' : '1.25rem', fontWeight: 700 }}>
+                  {totals.inboundAnswered}
+                </Typography>
+                <Typography sx={{ color: 'rgba(255,255,255,0.5)', fontSize: isMobile ? '0.6rem' : '0.7rem', mt: 0.5 }}>
+                  Unique: {totals.uniqueInboundAnswered}
+                </Typography>
+              </Box>
+              <Box sx={{ 
+                bgcolor: 'rgba(255, 152, 0, 0.15)', 
+                borderRadius: '12px', 
+                p: 1.5,
+                textAlign: 'center',
+              }}>
+                <Typography sx={{ color: 'rgba(255,255,255,0.7)', fontSize: isMobile ? '0.65rem' : '0.75rem', mb: 0.5 }}>
+                  Missed/Unanswered
+                </Typography>
+                <Typography sx={{ color: '#ff9800', fontSize: isMobile ? '1.1rem' : '1.25rem', fontWeight: 700 }}>
+                  {totals.inboundUnanswered}
+                </Typography>
+                <Typography sx={{ color: 'rgba(255,255,255,0.5)', fontSize: isMobile ? '0.6rem' : '0.7rem', mt: 0.5 }}>
+                  Unique: {totals.uniqueInboundUnanswered}
+                </Typography>
+              </Box>
+            </Box>
+          </Box>
         </Box>
       </Box>
     </Box>

@@ -71,7 +71,7 @@ export class CallsService {
 
   // Log a call from device
   async logCall(user: any, dto: {
-    leadId: string;
+    leadId?: string;
     phoneNumber: string;
     callType: 'outgoing' | 'incoming' | 'missed';
     startTime: Date | string;
@@ -81,20 +81,71 @@ export class CallsService {
     disposition?: string;
     notes?: string;
   }) {
-    // Check if lead exists and user has access
-    const lead = await this.leadRepo.findOne({ where: { id: dto.leadId, deleted: false } as any });
-    if (!lead) throw new BadRequestException('Lead not found');
+    let leadId = dto.leadId;
+    let lead: Lead | null = null;
+
+    // If no leadId provided (incoming call), try to find lead by phone number
+    if (!leadId && dto.phoneNumber) {
+      const normalizedPhone = this.normalizePhoneNumber(dto.phoneNumber);
+      console.log(`Looking for lead with phone: ${dto.phoneNumber} -> normalized: ${normalizedPhone}`);
+      
+      // Search for lead by any phone field using multiple matching strategies
+      // Strategy 1: Exact match on last 10 digits
+      // Strategy 2: The stored number ends with the normalized digits
+      // Strategy 3: The normalized phone ends with stored number (for numbers stored without country code)
+      const qb = this.leadRepo.createQueryBuilder('lead')
+        .where('lead.deleted = :del', { del: false })
+        .andWhere(
+          `(
+            REPLACE(REPLACE(REPLACE(lead.mobile_number, ' ', ''), '-', ''), '+', '') LIKE :phoneSuffix
+            OR REPLACE(REPLACE(REPLACE(lead.alternate_number, ' ', ''), '-', ''), '+', '') LIKE :phoneSuffix
+            OR REPLACE(REPLACE(REPLACE(lead.whatsapp_number, ' ', ''), '-', ''), '+', '') LIKE :phoneSuffix
+            OR lead.mobile_number LIKE :phonePattern
+            OR lead.alternate_number LIKE :phonePattern
+            OR lead.whatsapp_number LIKE :phonePattern
+          )`,
+          { 
+            phoneSuffix: `%${normalizedPhone}`,  // Ends with normalized (e.g., stored "919876543210" ends with "9876543210")
+            phonePattern: `%${normalizedPhone.slice(-10)}%`  // Contains last 10 digits
+          }
+        )
+        .orderBy('lead.date_modified', 'DESC')
+        .limit(1);
+      
+      lead = await qb.getOne();
+      if (lead) {
+        leadId = lead.id;
+        console.log(`Found lead ${leadId} (mobile: ${lead.mobileNumber}) by phone number ${dto.phoneNumber}`);
+      } else {
+        console.log(`No lead found for phone number ${dto.phoneNumber} (normalized: ${normalizedPhone}) - skipping incoming call log`);
+        return null; // Don't log calls from unknown numbers
+      }
+    } else if (leadId) {
+      // Check if lead exists and user has access
+      lead = await this.leadRepo.findOne({ where: { id: leadId, deleted: false } as any });
+      if (!lead) throw new BadRequestException('Lead not found');
+    }
+
+    if (!lead || !leadId) {
+      return null;
+    }
 
     const role = normalizeRole(user?.role, user?.isAdmin);
     if (role === 'counselor' && lead.assignedUserId !== user?.id) {
-      throw new ForbiddenException('No permission to log call for this lead');
+      // For incoming calls, allow logging even if not assigned (lead called counselor)
+      if (dto.callType !== 'incoming' && dto.callType !== 'missed') {
+        throw new ForbiddenException('No permission to log call for this lead');
+      }
     }
     if (role === 'center-manager') {
       // Verify lead belongs to center
       const leadOwner = lead.assignedUserId ? await this.userRepo.findOne({ where: { id: lead.assignedUserId } as any }) : null;
       const leadCenter = leadOwner?.centerName || null;
       if (leadCenter !== (user?.centerName || null)) {
-        throw new ForbiddenException('No permission to log call for this lead');
+        // For incoming calls, allow logging
+        if (dto.callType !== 'incoming' && dto.callType !== 'missed') {
+          throw new ForbiddenException('No permission to log call for this lead');
+        }
       }
     }
 
@@ -105,7 +156,7 @@ export class CallsService {
     }
 
     const callLog = this.callRepo.create({
-      leadId: dto.leadId,
+      leadId,
       userId: user?.id,
       phoneNumber: dto.phoneNumber,
       callType: dto.callType,
@@ -130,12 +181,24 @@ export class CallsService {
 
     // Emit WebSocket event for real-time update
     try {
-      this.dataSyncGateway.emitCallLogged(payload);
+      this.dataSyncGateway.emitCallLogged(payload, user?.centerName);
     } catch (wsError) {
       console.error('Failed to emit call:logged event:', wsError);
     }
     
     return payload;
+  }
+
+  // Normalize phone number for matching (remove non-digits, handle country codes)
+  private normalizePhoneNumber(phone: string): string {
+    // Remove all non-digit characters
+    let normalized = phone.replace(/\D/g, '');
+    // Remove leading country code if present (91 for India, 1 for US, etc.)
+    if (normalized.length > 10) {
+      // Keep last 10 digits
+      normalized = normalized.slice(-10);
+    }
+    return normalized;
   }
 
   // Get call logs for a lead
@@ -189,7 +252,9 @@ export class CallsService {
     const payload = this.mapCallLog((hydrated ?? saved) as CallLog & { user?: User });
 
     try {
-      this.dataSyncGateway.emitCallLogged(payload);
+      // Get the centerName from the call record or the user
+      const centerName = (hydrated as any)?.centerName || (saved as any)?.centerName || user?.centerName;
+      this.dataSyncGateway.emitCallLogged(payload, centerName);
     } catch (wsError) {
       console.error('Failed to emit call:logged event after update:', wsError);
     }
@@ -197,7 +262,7 @@ export class CallsService {
     return payload;
   }
 
-  // Get analytics: daily/monthly call stats
+  // Get analytics: daily/monthly call stats with direction breakdown
   async getAnalytics(user: any, query: { period?: 'daily' | 'monthly'; startDate?: string; endDate?: string }) {
     const role = normalizeRole(user?.role, user?.isAdmin);
     const period = query.period || 'daily';
@@ -219,6 +284,83 @@ export class CallsService {
     }
     // super-admin sees all
 
+    // Get detailed analytics with direction breakdown
+    const detailedQb = this.callRepo.createQueryBuilder('call')
+      .leftJoin('call.user', 'user')
+      .leftJoin('call.lead', 'lead')
+      .where('call.deleted = :del', { del: false })
+      .andWhere('call.start_time BETWEEN :start AND :end', { start: startDate, end: endDate });
+
+    if (role === 'center-manager') {
+      detailedQb.andWhere('call.center_name = :center', { center: user?.centerName || null });
+    } else if (role === 'counselor') {
+      detailedQb.andWhere('call.user_id = :uid', { uid: user?.id });
+    }
+
+    // Get all calls for detailed analysis
+    const allCalls = await detailedQb
+      .select([
+        'call.id AS id',
+        'call.callType AS callType',
+        'call.duration AS duration',
+        'call.leadId AS leadId',
+        'call.phoneNumber AS phoneNumber',
+        'call.userId AS usrId',
+        'user.firstName AS firstName',
+        'user.lastName AS lastName',
+        'call.centerName AS centerName',
+      ])
+      .getRawMany();
+
+    // Calculate direction-based analytics
+    const inboundCalls = allCalls.filter((c: any) => c.callType === 'incoming' || c.calltype === 'incoming');
+    const outboundCalls = allCalls.filter((c: any) => c.callType === 'outgoing' || c.calltype === 'outgoing');
+    const missedCalls = allCalls.filter((c: any) => c.callType === 'missed' || c.calltype === 'missed');
+
+    // Answered = duration > 0, Unanswered = duration === 0 or missed
+    const inboundAnswered = inboundCalls.filter((c: any) => (c.duration || 0) > 0);
+    const inboundUnanswered = inboundCalls.filter((c: any) => !c.duration || c.duration === 0);
+    const outboundAnswered = outboundCalls.filter((c: any) => (c.duration || 0) > 0);
+    const outboundUnanswered = outboundCalls.filter((c: any) => !c.duration || c.duration === 0);
+
+    // Unique counts by lead_id + phone_number combination
+    const getUniqueCount = (calls: any[]) => {
+      const uniqueSet = new Set(calls.map((c: any) => `${c.leadId || c.leadid || ''}_${c.phoneNumber || c.phonenumber || ''}`));
+      return uniqueSet.size;
+    };
+
+    const directionStats = {
+      // Total counts
+      totalCalls: allCalls.length,
+      totalInbound: inboundCalls.length,
+      totalOutbound: outboundCalls.length,
+      totalMissed: missedCalls.length,
+      
+      // Answered/Unanswered by direction
+      inboundAnswered: inboundAnswered.length,
+      inboundUnanswered: inboundUnanswered.length + missedCalls.length, // missed counts as unanswered inbound
+      outboundAnswered: outboundAnswered.length,
+      outboundUnanswered: outboundUnanswered.length,
+      
+      // Total answered/unanswered
+      totalAnswered: inboundAnswered.length + outboundAnswered.length,
+      totalUnanswered: inboundUnanswered.length + outboundUnanswered.length + missedCalls.length,
+      
+      // Unique counts (unique lead/phone combinations)
+      uniqueInboundAnswered: getUniqueCount(inboundAnswered),
+      uniqueInboundUnanswered: getUniqueCount([...inboundUnanswered, ...missedCalls]),
+      uniqueOutboundAnswered: getUniqueCount(outboundAnswered),
+      uniqueOutboundUnanswered: getUniqueCount(outboundUnanswered),
+      uniqueAnswered: getUniqueCount([...inboundAnswered, ...outboundAnswered]),
+      uniqueUnanswered: getUniqueCount([...inboundUnanswered, ...outboundUnanswered, ...missedCalls]),
+      
+      // Duration stats
+      totalDuration: allCalls.reduce((sum: number, c: any) => sum + (c.duration || 0), 0),
+      avgDuration: allCalls.length > 0 
+        ? Math.round(allCalls.reduce((sum: number, c: any) => sum + (c.duration || 0), 0) / allCalls.length)
+        : 0,
+    };
+
     // Group by user or center depending on role
     if (role === 'super-admin') {
       // Group by center
@@ -230,12 +372,15 @@ export class CallsService {
         .groupBy('call.center_name')
         .getRawMany();
 
-      return results.map((r: any) => ({
-        centerName: r.centerName || 'Unknown',
-        totalCalls: parseInt(r.totalCalls, 10),
-        totalDuration: parseInt(r.totalDuration || '0', 10),
-        avgDuration: parseFloat(r.avgDuration || '0'),
-      }));
+      return {
+        summary: directionStats,
+        breakdown: results.map((r: any) => ({
+          centerName: r.centerName || 'Unknown',
+          totalCalls: parseInt(r.totalCalls, 10),
+          totalDuration: parseInt(r.totalDuration || '0', 10),
+          avgDuration: parseFloat(r.avgDuration || '0'),
+        })),
+      };
     } else {
       // Group by counselor (for center-manager) or self (for counselor)
       const results = await qb
@@ -250,13 +395,16 @@ export class CallsService {
         .addGroupBy('user.last_name')
         .getRawMany();
 
-      return results.map((r: any) => ({
-        userId: r.userId,
-        userName: `${r.firstName || ''} ${r.lastName || ''}`.trim() || 'Unknown',
-        totalCalls: parseInt(r.totalCalls, 10),
-        totalDuration: parseInt(r.totalDuration || '0', 10),
-        avgDuration: parseFloat(r.avgDuration || '0'),
-      }));
+      return {
+        summary: directionStats,
+        breakdown: results.map((r: any) => ({
+          userId: r.userId,
+          userName: `${r.firstName || ''} ${r.lastName || ''}`.trim() || 'Unknown',
+          totalCalls: parseInt(r.totalCalls, 10),
+          totalDuration: parseInt(r.totalDuration || '0', 10),
+          avgDuration: parseFloat(r.avgDuration || '0'),
+        })),
+      };
     }
   }
 

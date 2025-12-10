@@ -1,12 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { useSelector } from 'react-redux';
 import {
-  Accordion,
-  AccordionDetails,
-  AccordionSummary,
   Avatar,
   Box,
   Button,
+  Card,
+  CardContent,
   Chip,
   CircularProgress,
   Dialog,
@@ -15,540 +14,740 @@ import {
   DialogContentText,
   DialogTitle,
   Divider,
-  FormControl,
+  Grid,
   IconButton,
-  MenuItem,
-  Select,
-  Drawer,
-  Autocomplete,
+  InputAdornment,
+  Paper,
   Stack,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
   Tooltip,
   Typography,
+  alpha,
   useTheme,
-  useMediaQuery,
+  Fade,
+  Zoom,
+  Collapse,
 } from '@mui/material';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
-import FilterListIcon from '@mui/icons-material/FilterList';
-import CloseIcon from '@mui/icons-material/Close';
+import {
+  Search as SearchIcon,
+  FiberManualRecord as DotIcon,
+  ExpandMore as ExpandIcon,
+  ExpandLess as CollapseIcon,
+  DeleteOutline as DeleteIcon,
+  PhoneInTalk as OnCallIcon,
+  Groups as MeetingIcon,
+  WifiOff as OfflineIcon,
+  Wifi as OnlineIcon,
+  Business as CenterIcon,
+  Refresh as RefreshIcon,
+} from '@mui/icons-material';
 import { RootState } from '../../store/store';
 import { ManagerWithCounselors, PresenceState, usersService } from '../../services/usersService';
+import { webSocketService } from '../../services/webSocketService';
 
-const presenceColor = (p: PresenceState | undefined) => {
-  switch (p) {
-    case 'online': return 'success.main';
-    case 'on_call': return 'info.main';
-    case 'in_meeting': return 'warning.main';
-    default: return 'text.disabled';
-  }
+// Presence configuration
+const presenceConfig: Record<PresenceState, { color: string; label: string; icon: React.ReactElement; bgColor: string }> = {
+  online: { 
+    color: '#22c55e', 
+    label: 'Online', 
+    icon: <OnlineIcon />,
+    bgColor: 'rgba(34, 197, 94, 0.1)',
+  },
+  on_call: { 
+    color: '#3b82f6', 
+    label: 'On Call', 
+    icon: <OnCallIcon />,
+    bgColor: 'rgba(59, 130, 246, 0.1)',
+  },
+  in_meeting: { 
+    color: '#f59e0b', 
+    label: 'In Meeting', 
+    icon: <MeetingIcon />,
+    bgColor: 'rgba(245, 158, 11, 0.1)',
+  },
+  offline: { 
+    color: '#94a3b8', 
+    label: 'Offline', 
+    icon: <OfflineIcon />,
+    bgColor: 'rgba(148, 163, 184, 0.1)',
+  },
 };
 
 const PresencePage: React.FC = () => {
+  const theme = useTheme();
   const { user } = useSelector((s: RootState) => s.auth);
+  const currentUserId = (user as any)?.id;
   const role = ((user as any)?.role || ((user as any)?.isAdmin ? 'super-admin' : 'counselor')).toLowerCase();
   const isSuperAdmin = role === 'super-admin' || !!(user as any)?.isAdmin;
-
-  const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const isCounselor = role === 'counselor';
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<ManagerWithCounselors[]>([]);
-  const [filter, setFilter] = useState('');
-  const [presenceFilter, setPresenceFilter] = useState<'all' | PresenceState>('all');
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [confirmTarget, setConfirmTarget] = useState<{ id: string; kind: 'manager'|'counselor'; name: string; cascadeCount?: number } | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
   const [expandedCenters, setExpandedCenters] = useState<Set<string>>(new Set());
-  const [expandedManagers, setExpandedManagers] = useState<Set<string>>(new Set());
-  const [sortBy, setSortBy] = useState<'name'|'counselorCount'|'presence'>('name');
-  const [centerFilter, setCenterFilter] = useState<string>('');
-  const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<{ id: string; name: string; kind: 'manager' | 'counselor'; cascadeCount?: number } | null>(null);
+  
+  // Current user's presence (for counselor toggle)
+  const [myPresence, setMyPresence] = useState<PresenceState>('offline');
+  const [updatingPresence, setUpdatingPresence] = useState(false);
 
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const resp = await usersService.getHierarchy();
-        if (!alive) return;
-        setData(resp.data || []);
-      } catch (e: any) {
-        if (!alive) return;
-        setError(e?.message || 'Failed to load presence');
-      } finally {
-        if (alive) setLoading(false);
-      }
-    })();
-    return () => { alive = false; };
-  }, []);
-
-  // Live presence updates (SSE with resilient reconnect + fallback polling)
-  const pollRef = useRef<number | null>(null);
-  useEffect(() => {
-    let es: EventSource | null = null;
-    let reconnectAttempts = 0;
-    const MAX_RECONNECT = 8; // exponential backoff upper bound (~ >30s)
-    const startPollingFallback = () => {
-      if (pollRef.current) return; // already running
-      pollRef.current = window.setInterval(async () => {
-        try {
-          const resp = await usersService.getHierarchy();
-          setData(resp.data || []);
-        } catch {}
-      }, 5000); // 5s lightweight polling
-    };
-    const stopPollingFallback = () => {
-      if (pollRef.current) {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
-      }
-    };
-  const attachSse = () => {
-      try {
-        const token = localStorage.getItem('accessToken');
-        if (!token) {
-          startPollingFallback();
-          return;
-        }
-        const env = (import.meta as any).env || {};
-        const isDev = !!env.DEV;
-        const envBase = env?.VITE_APP_API_URL as string | undefined;
-        let url = '';
-        if (!isDev && envBase && /^https?:\/\//i.test(envBase)) {
-          // Absolute base provided; ensure it includes /api prefix
-          const normalized = envBase.replace(/\/$/, '');
-          const withApi = /\/api$/i.test(normalized) ? normalized : `${normalized}/api`;
-          url = `${withApi}/users/events?access_token=${encodeURIComponent(token)}`;
-        } else {
-          // Use relative path so Vite proxy forwards to backend in dev
-          url = `/api/users/events?access_token=${encodeURIComponent(token)}`;
-        }
-        // Pass token as query param since EventSource cannot set Authorization header
-        es = new EventSource(url, { withCredentials: true } as any);
-        es.onmessage = (evt) => {
-          try {
-            const payload = JSON.parse((evt as MessageEvent).data || '{}') as { userId?: string; presence?: PresenceState };
-            if (!payload?.userId) return;
-            setData((prev) => prev.map((m) => ({
-              ...m,
-              centerManager: m.centerManager.id === payload.userId
-                ? { ...m.centerManager, presence: (payload.presence || m.centerManager.presence) as PresenceState }
-                : m.centerManager,
-              counselors: m.counselors.map((c) => c.id === payload.userId ? { ...c, presence: (payload.presence || c.presence) as PresenceState } : c),
-            })));
-          } catch {}
-        };
-        es.onerror = () => {
-          // On error attempt reconnect; if exhausted start polling fallback.
-          try { es && es.close(); } catch {}
-          if (reconnectAttempts >= MAX_RECONNECT) {
-            startPollingFallback();
-            return;
-          }
-          const timeout = Math.min(30000, 500 * Math.pow(2, reconnectAttempts));
-          reconnectAttempts += 1;
-          setTimeout(() => attachSse(), timeout);
-        };
-        es.onopen = () => {
-          // Connected; stop fallback polling if any
-          reconnectAttempts = 0;
-          stopPollingFallback();
-        };
-      } catch {
-        startPollingFallback();
-      }
-    };
-    attachSse();
-    return () => {
-      try { es && es.close(); } catch {}
-      stopPollingFallback();
-    };
-  }, []);
-
-  const textFiltered = useMemo(() => {
-    const q = filter.trim().toLowerCase();
-    if (!q) return data;
-    return data
-      .map((group) => {
-        const cm = group.centerManager;
-        const cmName = `${cm.firstName} ${cm.lastName}`.toLowerCase();
-        const inHeader = cmName.includes(q) || (cm.centerName || '').toLowerCase().includes(q) || cm.userName.toLowerCase().includes(q);
-        if (inHeader) return group;
-        const counselors = group.counselors.filter((c) => `${c.firstName} ${c.lastName}`.toLowerCase().includes(q) || c.userName.toLowerCase().includes(q));
-        return { ...group, counselors };
-      })
-      .filter((g) => g.counselors.length > 0 || `${g.centerManager.firstName} ${g.centerManager.lastName}`.toLowerCase().includes(q));
-  }, [data, filter]);
-
-  const filtered = useMemo(() => {
-    if (presenceFilter === 'all') return textFiltered;
-    return textFiltered
-      .map((g) => ({ ...g, counselors: g.counselors.filter((c) => c.presence === presenceFilter) }))
-      .filter((g) => g.counselors.length > 0);
-  }, [textFiltered, presenceFilter]);
-
-  // Group by center for better scannability
-  const groupedByCenter = useMemo(() => {
-    const groups = new Map<string, ManagerWithCounselors[]>();
-    for (const g of filtered) {
-      const key = (g.centerManager.centerName || 'Unassigned Center');
-      const arr = groups.get(key) || [];
-      arr.push(g);
-      groups.set(key, arr);
-    }
-    // Optional center filter (super admin convenience)
-    if (centerFilter) {
-      for (const k of Array.from(groups.keys())) {
-        if (!k.toLowerCase().includes(centerFilter.toLowerCase())) {
-          groups.delete(k);
-        }
-      }
-    }
-    return groups;
-  }, [filtered, centerFilter]);
-
-  // Global totals across filtered set
-  const globalTotals = useMemo(() => {
-    const totals: Record<PresenceState, number> = { online: 0, on_call: 0, in_meeting: 0, offline: 0 } as any;
-    filtered.forEach((mg) => mg.counselors.forEach((c) => { totals[c.presence] = (totals[c.presence] || 0) + 1; }));
-    return totals;
-  }, [filtered]);
-
-  const centerOptions = useMemo(() => {
-    const set = new Set<string>();
-    data.forEach((mg) => set.add(mg.centerManager.centerName || 'Unassigned Center'));
-    return Array.from(set).sort();
-  }, [data]);
-
-  const managerPresencePriority: Record<PresenceState, number> = {
-    online: 0,
-    on_call: 1,
-    in_meeting: 2,
-    offline: 3,
-  } as any;
-
-  const sortManagers = (arr: ManagerWithCounselors[]) => {
-    const copy = [...arr];
-    if (sortBy === 'name') {
-      copy.sort((a, b) => {
-        const na = `${a.centerManager.firstName} ${a.centerManager.lastName}`.toLowerCase();
-        const nb = `${b.centerManager.firstName} ${b.centerManager.lastName}`.toLowerCase();
-        return na < nb ? -1 : na > nb ? 1 : 0;
-      });
-    } else if (sortBy === 'counselorCount') {
-      copy.sort((a, b) => b.counselors.length - a.counselors.length);
-    } else if (sortBy === 'presence') {
-      copy.sort((a, b) => {
-        const pa = managerPresencePriority[a.centerManager.presence] ?? 99;
-        const pb = managerPresencePriority[b.centerManager.presence] ?? 99;
-        if (pa !== pb) return pa - pb;
-        return b.counselors.length - a.counselors.length;
-      });
-    }
-    return copy;
-  };
-
-  const openConfirm = (target: { id: string; kind: 'manager'|'counselor'; name: string; cascadeCount?: number }) => {
-    setConfirmTarget(target);
-    setConfirmOpen(true);
-  };
-
-  const handleConfirm = async () => {
-    if (!confirmTarget) return;
+  // Fetch hierarchy data
+  const fetchData = useCallback(async () => {
     try {
-      await usersService.deleteUser(confirmTarget.id);
+      setLoading(true);
       const resp = await usersService.getHierarchy();
       setData(resp.data || []);
+      setError(null);
+      
+      // Find current user's presence
+      if (currentUserId) {
+        for (const group of resp.data || []) {
+          if (group.centerManager.id === currentUserId) {
+            setMyPresence(group.centerManager.presence);
+            break;
+          }
+          const counselor = group.counselors.find(c => c.id === currentUserId);
+          if (counselor) {
+            setMyPresence(counselor.presence);
+            break;
+          }
+        }
+      }
+    } catch (e: any) {
+      setError(e?.message || 'Failed to load presence data');
     } finally {
-      setConfirmOpen(false);
-      setConfirmTarget(null);
+      setLoading(false);
+    }
+  }, [currentUserId]);
+
+  useEffect(() => {
+    // For counselors, just get their own presence without calling hierarchy
+    if (isCounselor) {
+      setLoading(false);
+      // Get presence from user object
+      setMyPresence(((user as any)?.presence as PresenceState) || 'offline');
+    } else {
+      fetchData();
+    }
+  }, [fetchData, isCounselor, user]);
+
+  // Subscribe to WebSocket presence updates
+  useEffect(() => {
+    const unsubscribe = webSocketService.onPresenceUpdate((update) => {
+      setData(prev => prev.map(group => ({
+        ...group,
+        centerManager: group.centerManager.id === update.userId
+          ? { ...group.centerManager, presence: update.presence as PresenceState }
+          : group.centerManager,
+        counselors: group.counselors.map(c => 
+          c.id === update.userId 
+            ? { ...c, presence: update.presence as PresenceState }
+            : c
+        ),
+      })));
+      
+      // Update my presence if it's me
+      if (update.userId === currentUserId) {
+        setMyPresence(update.presence as PresenceState);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [currentUserId]);
+
+  // Handle presence toggle for counselors
+  const handlePresenceChange = async (_: React.MouseEvent<HTMLElement>, newPresence: PresenceState | null) => {
+    if (!newPresence || newPresence === myPresence) return;
+    
+    setUpdatingPresence(true);
+    try {
+      await usersService.updateMyPresence(newPresence);
+      setMyPresence(newPresence);
+    } catch (e: any) {
+      console.error('Failed to update presence:', e);
+    } finally {
+      setUpdatingPresence(false);
     }
   };
 
-  return (
-    <Box sx={{ px: isMobile ? 0 : 1 }}>
-      <Typography variant="h5" sx={{ mb: 1, fontWeight: 700, fontSize: isMobile ? '1.5rem' : '1.5rem' }}>Presence</Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5, fontSize: isMobile ? '0.8rem' : '0.875rem' }}>
-        {isSuperAdmin ? 'View all centers with their Center Managers and Counselors.' : 'Counselors in your center.'}
-      </Typography>
+  // Filter data based on search
+  const filteredData = useMemo(() => {
+    if (!searchQuery.trim()) return data;
+    const query = searchQuery.toLowerCase();
+    return data
+      .map(group => ({
+        ...group,
+        counselors: group.counselors.filter(c => 
+          `${c.firstName} ${c.lastName}`.toLowerCase().includes(query) ||
+          c.userName.toLowerCase().includes(query)
+        ),
+      }))
+      .filter(group => 
+        group.counselors.length > 0 ||
+        `${group.centerManager.firstName} ${group.centerManager.lastName}`.toLowerCase().includes(query) ||
+        (group.centerManager.centerName || '').toLowerCase().includes(query)
+      );
+  }, [data, searchQuery]);
 
-      {/* Compact header with Filters button + global totals - responsive */}
-      <Stack 
-        direction={isMobile ? 'column' : 'row'} 
-        spacing={1} 
-        sx={{ mb: 2, alignItems: isMobile ? 'stretch' : 'center' }}
-      >
-        <Button 
-          variant="outlined" 
-          onClick={() => setFilterDrawerOpen(true)}
-          startIcon={<FilterListIcon />}
-          size={isMobile ? 'small' : 'medium'}
-          fullWidth={isMobile}
-        >
-          Filters
-        </Button>
-        {!isMobile && <Box sx={{ flex: 1 }} />}
-        {/* Status chips - scrollable on mobile */}
-        <Box 
+  // Group by center
+  const centerGroups = useMemo(() => {
+    const groups = new Map<string, ManagerWithCounselors[]>();
+    for (const group of filteredData) {
+      const centerName = group.centerManager.centerName || 'Unassigned';
+      const existing = groups.get(centerName) || [];
+      existing.push(group);
+      groups.set(centerName, existing);
+    }
+    return groups;
+  }, [filteredData]);
+
+  // Global stats
+  const stats = useMemo(() => {
+    const counts: Record<PresenceState, number> = { online: 0, on_call: 0, in_meeting: 0, offline: 0 };
+    data.forEach(group => {
+      group.counselors.forEach(c => {
+        counts[c.presence] = (counts[c.presence] || 0) + 1;
+      });
+    });
+    return counts;
+  }, [data]);
+
+  const toggleCenter = (centerName: string) => {
+    setExpandedCenters(prev => {
+      const next = new Set(prev);
+      if (next.has(centerName)) next.delete(centerName);
+      else next.add(centerName);
+      return next;
+    });
+  };
+
+  const handleDelete = async () => {
+    if (!confirmDelete) return;
+    try {
+      await usersService.deleteUser(confirmDelete.id);
+      await fetchData();
+    } finally {
+      setConfirmDelete(null);
+    }
+  };
+
+  // Counselor view - simple presence toggle
+  if (isCounselor) {
+    return (
+      <Box sx={{ p: 3, maxWidth: 600, mx: 'auto' }}>
+        <Typography variant="h4" sx={{ fontWeight: 700, mb: 1, textAlign: 'center' }}>
+          Your Status
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 4, textAlign: 'center' }}>
+          Set your availability status to let your team know when you're available
+        </Typography>
+
+        <Card 
+          elevation={0} 
           sx={{ 
-            display: 'flex', 
-            gap: 0.5, 
-            flexWrap: isMobile ? 'nowrap' : 'wrap',
-            overflowX: isMobile ? 'auto' : 'visible',
-            pb: isMobile ? 0.5 : 0,
-            '&::-webkit-scrollbar': { height: 4 },
-            '&::-webkit-scrollbar-thumb': { backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: 2 },
+            borderRadius: 4, 
+            border: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+            background: `linear-gradient(135deg, ${alpha(presenceConfig[myPresence].color, 0.05)} 0%, ${alpha(theme.palette.background.paper, 1)} 100%)`,
           }}
         >
-          <Chip size="small" icon={<FiberManualRecordIcon sx={{ color: 'success.main !important', fontSize: isMobile ? 10 : 12 }} />} label={`${globalTotals.online || 0}`} sx={{ fontSize: isMobile ? '0.7rem' : '0.8125rem' }} />
-          <Chip size="small" icon={<FiberManualRecordIcon sx={{ color: 'info.main !important', fontSize: isMobile ? 10 : 12 }} />} label={`${globalTotals.on_call || 0}`} sx={{ fontSize: isMobile ? '0.7rem' : '0.8125rem' }} />
-          <Chip size="small" icon={<FiberManualRecordIcon sx={{ color: 'warning.main !important', fontSize: isMobile ? 10 : 12 }} />} label={`${globalTotals.in_meeting || 0}`} sx={{ fontSize: isMobile ? '0.7rem' : '0.8125rem' }} />
-          <Chip size="small" icon={<FiberManualRecordIcon sx={{ color: 'text.disabled !important', fontSize: isMobile ? 10 : 12 }} />} label={`${globalTotals.offline || 0}`} sx={{ fontSize: isMobile ? '0.7rem' : '0.8125rem' }} />
+          <CardContent sx={{ p: 4 }}>
+            <Stack alignItems="center" spacing={3}>
+              {/* Current status display */}
+              <Zoom in key={myPresence}>
+                <Box 
+                  sx={{ 
+                    width: 120, 
+                    height: 120, 
+                    borderRadius: '50%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backgroundColor: presenceConfig[myPresence].bgColor,
+                    border: `3px solid ${presenceConfig[myPresence].color}`,
+                    transition: 'all 0.3s ease',
+                  }}
+                >
+                  {React.cloneElement(presenceConfig[myPresence].icon, { 
+                    sx: { fontSize: 48, color: presenceConfig[myPresence].color } 
+                  })}
+                </Box>
+              </Zoom>
+
+              <Typography 
+                variant="h5" 
+                sx={{ 
+                  fontWeight: 600, 
+                  color: presenceConfig[myPresence].color,
+                  transition: 'color 0.3s ease',
+                }}
+              >
+                {presenceConfig[myPresence].label}
+              </Typography>
+
+              <Divider sx={{ width: '100%' }} />
+
+              {/* Toggle buttons */}
+              <Box sx={{ width: '100%' }}>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2, textAlign: 'center' }}>
+                  Change your status
+                </Typography>
+                <ToggleButtonGroup
+                  value={myPresence}
+                  exclusive
+                  onChange={handlePresenceChange}
+                  disabled={updatingPresence}
+                  fullWidth
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(2, 1fr)',
+                    gap: 1,
+                    '& .MuiToggleButton-root': {
+                      borderRadius: 2,
+                      border: `1px solid ${alpha(theme.palette.divider, 0.2)}`,
+                      py: 1.5,
+                      textTransform: 'none',
+                      '&.Mui-selected': {
+                        fontWeight: 600,
+                      },
+                    },
+                  }}
+                >
+                  {(Object.entries(presenceConfig) as [PresenceState, typeof presenceConfig.online][]).map(([key, config]) => (
+                    <ToggleButton 
+                      key={key} 
+                      value={key}
+                      sx={{
+                        '&.Mui-selected': {
+                          backgroundColor: config.bgColor,
+                          borderColor: `${config.color} !important`,
+                          color: config.color,
+                          '&:hover': {
+                            backgroundColor: alpha(config.color, 0.15),
+                          },
+                        },
+                      }}
+                    >
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        {React.cloneElement(config.icon, { sx: { fontSize: 20 } })}
+                        <span>{config.label}</span>
+                      </Stack>
+                    </ToggleButton>
+                  ))}
+                </ToggleButtonGroup>
+              </Box>
+
+              {updatingPresence && (
+                <Fade in>
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <CircularProgress size={16} />
+                    <Typography variant="body2" color="text.secondary">
+                      Updating...
+                    </Typography>
+                  </Stack>
+                </Fade>
+              )}
+            </Stack>
+          </CardContent>
+        </Card>
+      </Box>
+    );
+  }
+
+  // Manager/Admin view
+  return (
+    <Box sx={{ p: { xs: 2, md: 3 } }}>
+      {/* Header */}
+      <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ md: 'center' }} justifyContent="space-between" sx={{ mb: 3 }}>
+        <Box>
+          <Typography variant="h4" sx={{ fontWeight: 700, mb: 0.5 }}>
+            Team Presence
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            {isSuperAdmin ? 'Real-time status of all team members across centers' : 'Your center team status'}
+          </Typography>
         </Box>
+        <Stack direction="row" spacing={1}>
+          <Tooltip title="Refresh">
+            <IconButton onClick={fetchData} disabled={loading}>
+              <RefreshIcon />
+            </IconButton>
+          </Tooltip>
+        </Stack>
       </Stack>
 
-      {/* Unified Filter Drawer */}
-      <Drawer anchor="right" open={filterDrawerOpen} onClose={() => setFilterDrawerOpen(false)}>
-        <Box sx={{ width: { xs: '100vw', sm: 360 }, p: 2 }} role="presentation">
-          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
-            <Typography variant="h6">Filters</Typography>
-            <IconButton onClick={() => setFilterDrawerOpen(false)} size="small" aria-label="close">
-              <CloseIcon />
-            </IconButton>
-          </Stack>
-          <Divider sx={{ mb: 2 }} />
-          <Stack spacing={2}>
-            <TextField
-              size="small"
-              label="Search"
-              placeholder="Search center, manager, or counselor"
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              fullWidth
-            />
-            <Box>
-              <Typography variant="caption" color="text.secondary">Presence</Typography>
-              <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1, flexWrap: 'wrap' }}>
-                {[{k:'all', c:'inherit', label:'All'}, {k:'online', c:'success.main', label:'Online'}, {k:'on_call', c:'info.main', label:'On Call'}, {k:'in_meeting', c:'warning.main', label:'In Meeting'}, {k:'offline', c:'text.disabled', label:'Offline'}]
-                  .map((tab: any) => (
-                    <Chip
-                      key={tab.k}
-                      clickable
-                      variant={presenceFilter === tab.k ? 'filled' : 'outlined'}
-                      color={presenceFilter === tab.k && tab.k !== 'all' ? 'primary' : undefined}
-                      icon={<FiberManualRecordIcon sx={{ color: `${tab.c} !important` }} />}
-                      label={tab.label}
-                      onClick={() => setPresenceFilter(tab.k)}
-                    />
-                  ))}
-              </Stack>
-            </Box>
-            {isSuperAdmin && (
-              <Autocomplete
-                freeSolo
-                options={centerOptions}
-                value={centerFilter}
-                onInputChange={(_, v) => setCenterFilter(v)}
-                renderInput={(params) => <TextField {...params} label="Center" size="small" />}
-              />
-            )}
-            <FormControl size="small" fullWidth>
-              <Select value={sortBy} onChange={(e) => setSortBy(e.target.value as any)} displayEmpty>
-                <MenuItem value="name">Sort: Name</MenuItem>
-                <MenuItem value="counselorCount">Sort: Counselor count</MenuItem>
-                <MenuItem value="presence">Sort: Presence (Online first)</MenuItem>
-              </Select>
-            </FormControl>
-          </Stack>
-          <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
-            <Button
-              variant="text"
-              onClick={() => {
-                setFilter('');
-                setPresenceFilter('all');
-                setCenterFilter('');
-                setSortBy('name');
+      {/* Stats Cards */}
+      <Grid container spacing={2} sx={{ mb: 3 }}>
+        {(Object.entries(presenceConfig) as [PresenceState, typeof presenceConfig.online][]).map(([key, config]) => (
+          <Grid item xs={6} sm={3} key={key}>
+            <Paper 
+              elevation={0}
+              sx={{ 
+                p: 2, 
+                borderRadius: 3,
+                border: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+                background: `linear-gradient(135deg, ${alpha(config.color, 0.08)} 0%, ${alpha(theme.palette.background.paper, 1)} 100%)`,
               }}
-            >Clear</Button>
-            <Box sx={{ flex: 1 }} />
-            <Button onClick={() => {
-              // Expand all centers and managers for quick view
-              const centers = Array.from(groupedByCenter.keys());
-              setExpandedCenters(new Set(centers));
-              const allMgrIds = new Set<string>();
-              centers.forEach((cn) => {
-                (groupedByCenter.get(cn) || []).forEach((g) => allMgrIds.add(g.centerManager.id));
-              });
-              setExpandedManagers(allMgrIds);
-            }}>Expand all</Button>
-            <Button onClick={() => { setExpandedCenters(new Set()); setExpandedManagers(new Set()); }}>Collapse all</Button>
-            <Button variant="contained" onClick={() => setFilterDrawerOpen(false)}>Apply</Button>
-          </Stack>
-        </Box>
-      </Drawer>
+            >
+              <Stack direction="row" spacing={2} alignItems="center">
+                <Box 
+                  sx={{ 
+                    width: 44, 
+                    height: 44, 
+                    borderRadius: 2,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backgroundColor: alpha(config.color, 0.15),
+                  }}
+                >
+                  {React.cloneElement(config.icon, { sx: { color: config.color } })}
+                </Box>
+                <Box>
+                  <Typography variant="h5" sx={{ fontWeight: 700, lineHeight: 1 }}>
+                    {stats[key]}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {config.label}
+                  </Typography>
+                </Box>
+              </Stack>
+            </Paper>
+          </Grid>
+        ))}
+      </Grid>
 
+      {/* Search */}
+      <TextField
+        fullWidth
+        placeholder="Search team members or centers..."
+        value={searchQuery}
+        onChange={(e) => setSearchQuery(e.target.value)}
+        InputProps={{
+          startAdornment: (
+            <InputAdornment position="start">
+              <SearchIcon color="action" />
+            </InputAdornment>
+          ),
+        }}
+        sx={{ 
+          mb: 3,
+          '& .MuiOutlinedInput-root': {
+            borderRadius: 2,
+          },
+        }}
+      />
+
+      {/* Loading state */}
       {loading && (
-        <Stack alignItems="center" sx={{ py: 6 }}>
+        <Stack alignItems="center" sx={{ py: 8 }}>
           <CircularProgress />
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+            Loading team data...
+          </Typography>
         </Stack>
       )}
+
+      {/* Error state */}
       {error && (
-        <Typography color="error" sx={{ mb: 2 }}>{error}</Typography>
-      )}
-      {!loading && !error && filtered.length === 0 && (
-        <Typography color="text.secondary">No results.</Typography>
+        <Paper sx={{ p: 3, textAlign: 'center', borderRadius: 2 }}>
+          <Typography color="error">{error}</Typography>
+          <Button onClick={fetchData} sx={{ mt: 2 }}>Retry</Button>
+        </Paper>
       )}
 
-      {/* Grouped by center */}
-      <Stack spacing={1}>
-        {Array.from(groupedByCenter.entries()).map(([centerName, managers]) => {
-          // Totals per center
-          const centerTotals: Record<PresenceState, number> = { online: 0, on_call: 0, in_meeting: 0, offline: 0 } as any;
-          managers.forEach((m) => m.counselors.forEach((c) => { centerTotals[c.presence] = (centerTotals[c.presence] || 0) + 1; }));
-          const expanded = expandedCenters.has(centerName);
-          const sortedManagers = sortManagers(managers);
-          return (
-            <Accordion key={centerName} expanded={expanded} onChange={() => {
-              const next = new Set(expandedCenters);
-              if (expanded) next.delete(centerName); else next.add(centerName);
-              setExpandedCenters(next);
-            }}>
-              <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ px: isMobile ? 1 : 2 }}>
-                <Stack 
-                  direction={isMobile ? 'column' : 'row'} 
-                  spacing={isMobile ? 0.5 : 2} 
-                  alignItems={isMobile ? 'flex-start' : 'center'} 
-                  sx={{ width: '100%', pr: isMobile ? 0 : 2 }}
+      {/* Empty state */}
+      {!loading && !error && filteredData.length === 0 && (
+        <Paper sx={{ p: 4, textAlign: 'center', borderRadius: 2 }}>
+          <Typography color="text.secondary">No team members found</Typography>
+        </Paper>
+      )}
+
+      {/* Center cards */}
+      {!loading && !error && Array.from(centerGroups.entries()).map(([centerName, managers]) => {
+        const isExpanded = expandedCenters.has(centerName);
+        const centerStats: Record<PresenceState, number> = { online: 0, on_call: 0, in_meeting: 0, offline: 0 };
+        let totalInCenter = 0;
+        managers.forEach(m => m.counselors.forEach(c => {
+          centerStats[c.presence]++;
+          totalInCenter++;
+        }));
+
+        return (
+          <Paper 
+            key={centerName}
+            elevation={0}
+            sx={{ 
+              mb: 2, 
+              borderRadius: 3,
+              border: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+              overflow: 'hidden',
+            }}
+          >
+            {/* Center header */}
+            <Box 
+              onClick={() => toggleCenter(centerName)}
+              sx={{ 
+                p: 2, 
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                backgroundColor: alpha(theme.palette.primary.main, 0.02),
+                '&:hover': {
+                  backgroundColor: alpha(theme.palette.primary.main, 0.04),
+                },
+                transition: 'background-color 0.2s',
+              }}
+            >
+              <Stack direction="row" spacing={2} alignItems="center">
+                <Box 
+                  sx={{ 
+                    width: 40, 
+                    height: 40, 
+                    borderRadius: 2,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backgroundColor: alpha(theme.palette.primary.main, 0.1),
+                  }}
                 >
-                  <Typography sx={{ fontWeight: 700, fontSize: isMobile ? '0.9rem' : '1rem' }}>{centerName}</Typography>
-                  {!isMobile && <Box sx={{ flex: 1 }} />}
-                  {/* Status chips - compact on mobile */}
-                  <Box sx={{ 
-                    display: 'flex', 
-                    gap: 0.5, 
-                    flexWrap: 'wrap',
-                    mt: isMobile ? 0.5 : 0,
-                  }}>
-                    <Chip size="small" variant="outlined" icon={<FiberManualRecordIcon sx={{ color: 'success.main !important', fontSize: isMobile ? 8 : 12 }} />} label={isMobile ? centerTotals.online || 0 : `${centerTotals.online || 0} Online`} sx={{ fontSize: isMobile ? '0.65rem' : '0.75rem', height: isMobile ? 20 : 24 }} />
-                    <Chip size="small" variant="outlined" icon={<FiberManualRecordIcon sx={{ color: 'info.main !important', fontSize: isMobile ? 8 : 12 }} />} label={isMobile ? centerTotals.on_call || 0 : `${centerTotals.on_call || 0} On Call`} sx={{ fontSize: isMobile ? '0.65rem' : '0.75rem', height: isMobile ? 20 : 24 }} />
-                    <Chip size="small" variant="outlined" icon={<FiberManualRecordIcon sx={{ color: 'warning.main !important', fontSize: isMobile ? 8 : 12 }} />} label={isMobile ? centerTotals.in_meeting || 0 : `${centerTotals.in_meeting || 0} In Meeting`} sx={{ fontSize: isMobile ? '0.65rem' : '0.75rem', height: isMobile ? 20 : 24 }} />
-                    <Chip size="small" variant="outlined" icon={<FiberManualRecordIcon sx={{ color: 'text.disabled !important', fontSize: isMobile ? 8 : 12 }} />} label={isMobile ? centerTotals.offline || 0 : `${centerTotals.offline || 0} Offline`} sx={{ fontSize: isMobile ? '0.65rem' : '0.75rem', height: isMobile ? 20 : 24 }} />
-                  </Box>
+                  <CenterIcon color="primary" />
+                </Box>
+                <Box>
+                  <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                    {centerName}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {managers.length} manager{managers.length > 1 ? 's' : ''} • {totalInCenter} counselor{totalInCenter > 1 ? 's' : ''}
+                  </Typography>
+                </Box>
+              </Stack>
+              
+              <Stack direction="row" spacing={1} alignItems="center">
+                {/* Mini status indicators */}
+                <Stack direction="row" spacing={0.5}>
+                  {(Object.entries(presenceConfig) as [PresenceState, typeof presenceConfig.online][]).map(([key, config]) => (
+                    centerStats[key] > 0 && (
+                      <Chip
+                        key={key}
+                        size="small"
+                        icon={<DotIcon sx={{ fontSize: 10, color: `${config.color} !important` }} />}
+                        label={centerStats[key]}
+                        sx={{ 
+                          height: 24,
+                          fontSize: '0.75rem',
+                          backgroundColor: alpha(config.color, 0.1),
+                        }}
+                      />
+                    )
+                  ))}
                 </Stack>
-              </AccordionSummary>
-              <AccordionDetails sx={{ px: isMobile ? 1 : 2 }}>
-                <Stack spacing={1}>
-                  {sortedManagers.map((group) => {
-                    const cm = group.centerManager;
-                    const headerName = `${cm.firstName} ${cm.lastName}`.trim() || cm.userName;
-                    const counts = group.counselors.reduce((acc: Record<string, number>, c) => {
-                      acc[c.presence] = (acc[c.presence] || 0) + 1;
-                      return acc;
-                    }, {} as Record<PresenceState, number> as any);
-                    const mgrExpanded = expandedManagers.has(cm.id);
-                    return (
-                      <Accordion key={cm.id} expanded={mgrExpanded} onChange={() => {
-                        const next = new Set(expandedManagers);
-                        if (mgrExpanded) next.delete(cm.id); else next.add(cm.id);
-                        setExpandedManagers(next);
-                      }} disableGutters>
-                        <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ px: isMobile ? 1 : 2 }}>
-                          <Stack 
-                            direction="column"
-                            spacing={0.5}
-                            sx={{ width: '100%', pr: isMobile ? 0 : 2 }}
-                          >
-                            {/* Manager info row */}
-                            <Stack direction="row" spacing={1} alignItems="center">
-                              <Avatar sx={{ width: isMobile ? 24 : 28, height: isMobile ? 24 : 28, bgcolor: 'primary.light', fontSize: isMobile ? '0.7rem' : '0.8rem' }}>
-                                {`${(cm.firstName||' ')[0]}${(cm.lastName||' ')[0]}`.toUpperCase()}
-                              </Avatar>
-                              <FiberManualRecordIcon sx={{ fontSize: isMobile ? 10 : 14, color: presenceColor(cm.presence) }} />
-                              <Box sx={{ flex: 1, minWidth: 0 }}>
-                                <Typography sx={{ fontWeight: 600, lineHeight: 1.2, fontSize: isMobile ? '0.8rem' : '1rem' }}>
-                                  {headerName} {!isMobile && `@${cm.userName}`}
-                                </Typography>
-                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: isMobile ? '0.65rem' : '0.75rem' }}>
-                                  Center Manager
-                                </Typography>
-                              </Box>
-                              <Chip size="small" color="primary" label={`${group.counselors.length}`} sx={{ fontSize: isMobile ? '0.65rem' : '0.75rem', height: isMobile ? 20 : 24, minWidth: isMobile ? 28 : 'auto' }} />
-                              {isSuperAdmin && !isMobile && (
-                                <Tooltip title="Delete Center Manager and all counselors under them">
-                                  <IconButton size="small" color="error" onClick={(e) => { e.stopPropagation(); openConfirm({ id: cm.id, kind: 'manager', name: headerName, cascadeCount: group.counselors.length }); }}>
-                                    <DeleteOutlineIcon fontSize="small" />
-                                  </IconButton>
-                                </Tooltip>
-                              )}
-                            </Stack>
-                            {/* Status chips - hidden on mobile to save space */}
-                            {!isMobile && (
-                              <Stack direction="row" spacing={0.5} alignItems="center" sx={{ ml: 5 }}>
-                                <Chip size="small" variant="outlined" icon={<FiberManualRecordIcon sx={{ color: 'success.main !important' }} />} label={counts['online'] ? `${counts['online']} Online` : '0 Online'} />
-                                <Chip size="small" variant="outlined" icon={<FiberManualRecordIcon sx={{ color: 'info.main !important' }} />} label={counts['on_call'] ? `${counts['on_call']} On Call` : '0 On Call'} />
-                                <Chip size="small" variant="outlined" icon={<FiberManualRecordIcon sx={{ color: 'warning.main !important' }} />} label={counts['in_meeting'] ? `${counts['in_meeting']} In Meeting` : '0 In Meeting'} />
-                                <Chip size="small" variant="outlined" icon={<FiberManualRecordIcon sx={{ color: 'text.disabled !important' }} />} label={counts['offline'] ? `${counts['offline']} Offline` : '0 Offline'} />
-                              </Stack>
-                            )}
-                          </Stack>
-                        </AccordionSummary>
-                        <AccordionDetails sx={{ px: isMobile ? 0.5 : 2 }}>
-                          {group.counselors.length === 0 ? (
-                            <Typography variant="body2" color="text.secondary" sx={{ pl: isMobile ? 2 : 5, py: 1, fontSize: isMobile ? '0.8rem' : '0.875rem' }}>
-                              No counselors found for this manager.
-                            </Typography>
-                          ) : (
-                            <Stack divider={<Divider flexItem />}>
-                              {group.counselors.map((c) => {
-                                const name = `${c.firstName} ${c.lastName}`.trim() || c.userName;
-                                return (
-                                  <Stack key={c.id} direction="row" spacing={isMobile ? 1 : 2} alignItems="center" sx={{ pl: isMobile ? 1 : 5, py: isMobile ? 0.75 : 1 }}>
-                                    <Avatar sx={{ width: isMobile ? 20 : 24, height: isMobile ? 20 : 24, bgcolor: 'secondary.light', fontSize: isMobile ? '0.6rem' : '0.7rem' }}>
-                                      {`${(c.firstName||' ')[0]}${(c.lastName||' ')[0]}`.toUpperCase()}
-                                    </Avatar>
-                                    <FiberManualRecordIcon sx={{ fontSize: isMobile ? 10 : 12, color: presenceColor(c.presence) }} />
-                                    <Box sx={{ flex: 1, minWidth: 0 }}>
-                                      <Typography variant="body2" sx={{ fontWeight: 500, fontSize: isMobile ? '0.75rem' : '0.875rem' }}>{name}</Typography>
-                                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: isMobile ? '0.6rem' : '0.75rem' }}>Counselor</Typography>
-                                    </Box>
-                                    {isSuperAdmin && !isMobile && (
-                                      <Tooltip title="Delete Counselor">
-                                        <IconButton size="small" color="error" onClick={() => openConfirm({ id: c.id, kind: 'counselor', name })}>
-                                          <DeleteOutlineIcon fontSize="small" />
-                                        </IconButton>
-                                      </Tooltip>
-                                    )}
-                                  </Stack>
-                                );
-                              })}
-                            </Stack>
-                          )}
-                        </AccordionDetails>
-                      </Accordion>
-                    );
-                  })}
-                </Stack>
-              </AccordionDetails>
-            </Accordion>
-          );
-        })}
-      </Stack>
+                <IconButton size="small">
+                  {isExpanded ? <CollapseIcon /> : <ExpandIcon />}
+                </IconButton>
+              </Stack>
+            </Box>
 
-      <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)}>
+            {/* Center content */}
+            <Collapse in={isExpanded}>
+              <Divider />
+              <Box sx={{ p: 2 }}>
+                {managers.map((group) => {
+                  const cm = group.centerManager;
+                  const cmName = `${cm.firstName} ${cm.lastName}`.trim() || cm.userName;
+
+                  return (
+                    <Box key={cm.id} sx={{ mb: 2, '&:last-child': { mb: 0 } }}>
+                      {/* Manager header */}
+                      <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 1.5 }}>
+                        <Avatar 
+                          sx={{ 
+                            width: 36, 
+                            height: 36, 
+                            bgcolor: alpha(theme.palette.primary.main, 0.2),
+                            color: theme.palette.primary.main,
+                            fontWeight: 600,
+                            fontSize: '0.875rem',
+                          }}
+                        >
+                          {`${(cm.firstName || ' ')[0]}${(cm.lastName || ' ')[0]}`.toUpperCase()}
+                        </Avatar>
+                        <Box sx={{ flex: 1 }}>
+                          <Stack direction="row" spacing={1} alignItems="center">
+                            <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                              {cmName}
+                            </Typography>
+                            <Chip 
+                              size="small" 
+                              label="Manager" 
+                              sx={{ 
+                                height: 20, 
+                                fontSize: '0.7rem',
+                                backgroundColor: alpha(theme.palette.primary.main, 0.1),
+                                color: theme.palette.primary.main,
+                              }} 
+                            />
+                            <Chip
+                              size="small"
+                              icon={<DotIcon sx={{ fontSize: 10, color: `${presenceConfig[cm.presence].color} !important` }} />}
+                              label={presenceConfig[cm.presence].label}
+                              sx={{ 
+                                height: 20, 
+                                fontSize: '0.7rem',
+                                backgroundColor: presenceConfig[cm.presence].bgColor,
+                              }}
+                            />
+                          </Stack>
+                          <Typography variant="caption" color="text.secondary">
+                            @{cm.userName}
+                          </Typography>
+                        </Box>
+                        {isSuperAdmin && (
+                          <Tooltip title="Delete manager and all counselors">
+                            <IconButton 
+                              size="small" 
+                              color="error"
+                              onClick={(e) => { 
+                                e.stopPropagation();
+                                setConfirmDelete({ 
+                                  id: cm.id, 
+                                  name: cmName, 
+                                  kind: 'manager',
+                                  cascadeCount: group.counselors.length,
+                                });
+                              }}
+                            >
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        )}
+                      </Stack>
+
+                      {/* Counselors grid */}
+                      {group.counselors.length > 0 ? (
+                        <Grid container spacing={1.5} sx={{ pl: 6 }}>
+                          {group.counselors.map((counselor) => {
+                            const name = `${counselor.firstName} ${counselor.lastName}`.trim() || counselor.userName;
+                            const config = presenceConfig[counselor.presence];
+
+                            return (
+                              <Grid item xs={12} sm={6} md={4} lg={3} key={counselor.id}>
+                                <Paper
+                                  elevation={0}
+                                  sx={{
+                                    p: 1.5,
+                                    borderRadius: 2,
+                                    border: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+                                    backgroundColor: alpha(config.color, 0.03),
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 1.5,
+                                    transition: 'all 0.2s',
+                                    '&:hover': {
+                                      borderColor: alpha(config.color, 0.3),
+                                      backgroundColor: alpha(config.color, 0.08),
+                                    },
+                                  }}
+                                >
+                                  <Box sx={{ position: 'relative' }}>
+                                    <Avatar 
+                                      sx={{ 
+                                        width: 32, 
+                                        height: 32,
+                                        fontSize: '0.75rem',
+                                        fontWeight: 600,
+                                      }}
+                                    >
+                                      {`${(counselor.firstName || ' ')[0]}${(counselor.lastName || ' ')[0]}`.toUpperCase()}
+                                    </Avatar>
+                                    <Box
+                                      sx={{
+                                        position: 'absolute',
+                                        bottom: -2,
+                                        right: -2,
+                                        width: 12,
+                                        height: 12,
+                                        borderRadius: '50%',
+                                        backgroundColor: config.color,
+                                        border: '2px solid white',
+                                      }}
+                                    />
+                                  </Box>
+                                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                                    <Typography 
+                                      variant="body2" 
+                                      sx={{ 
+                                        fontWeight: 500,
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap',
+                                      }}
+                                    >
+                                      {name}
+                                    </Typography>
+                                    <Typography 
+                                      variant="caption" 
+                                      sx={{ 
+                                        color: config.color,
+                                        fontWeight: 500,
+                                      }}
+                                    >
+                                      {config.label}
+                                    </Typography>
+                                  </Box>
+                                  {isSuperAdmin && (
+                                    <IconButton 
+                                      size="small" 
+                                      sx={{ opacity: 0.5, '&:hover': { opacity: 1 } }}
+                                      onClick={(e) => { 
+                                        e.stopPropagation();
+                                        setConfirmDelete({ id: counselor.id, name, kind: 'counselor' });
+                                      }}
+                                    >
+                                      <DeleteIcon fontSize="small" />
+                                    </IconButton>
+                                  )}
+                                </Paper>
+                              </Grid>
+                            );
+                          })}
+                        </Grid>
+                      ) : (
+                        <Typography 
+                          variant="body2" 
+                          color="text.secondary" 
+                          sx={{ pl: 6, fontStyle: 'italic' }}
+                        >
+                          No counselors assigned
+                        </Typography>
+                      )}
+                    </Box>
+                  );
+                })}
+              </Box>
+            </Collapse>
+          </Paper>
+        );
+      })}
+
+      {/* Delete confirmation dialog */}
+      <Dialog open={!!confirmDelete} onClose={() => setConfirmDelete(null)}>
         <DialogTitle>Confirm Delete</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            {confirmTarget?.kind === 'manager'
-              ? `Delete Center Manager “${confirmTarget?.name}”? This will also delete ${confirmTarget?.cascadeCount || 0} counselor(s) under them.`
-              : `Delete Counselor “${confirmTarget?.name}”?`}
+            {confirmDelete?.kind === 'manager'
+              ? `Are you sure you want to delete "${confirmDelete?.name}"? This will also delete ${confirmDelete?.cascadeCount || 0} counselor(s) under them.`
+              : `Are you sure you want to delete "${confirmDelete?.name}"?`}
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setConfirmOpen(false)}>Cancel</Button>
-          <Button onClick={handleConfirm} color="error" variant="contained">Delete</Button>
+          <Button onClick={() => setConfirmDelete(null)}>Cancel</Button>
+          <Button onClick={handleDelete} color="error" variant="contained">
+            Delete
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>

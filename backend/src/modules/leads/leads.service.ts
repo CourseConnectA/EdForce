@@ -9,6 +9,7 @@ import { LeadHistory } from '../../database/entities/lead-history.entity';
 import { LeadView } from '../../database/entities/lead-view.entity';
 import { User } from '../../database/entities/user.entity';
 import { LeadFieldSetting } from '../../database/entities/lead-field-setting.entity';
+import { CenterFieldVisibility } from '../../database/entities/center-field-visibility.entity';
 import { CenterRoutingRule } from '../../database/entities/center-routing-rule.entity';
 import { normalizeRole } from '../../common/role.util';
 import { getFollowUpMaxDate } from './lead-status.config';
@@ -27,12 +28,140 @@ export class LeadsService {
     private viewsRepo: Repository<LeadView>,
     @InjectRepository(LeadFieldSetting)
     private fieldSettingsRepo: Repository<LeadFieldSetting>,
+    @InjectRepository(CenterFieldVisibility)
+    private centerFieldVisibilityRepo: Repository<CenterFieldVisibility>,
     @InjectRepository(CenterRoutingRule)
     private routingRuleRepo: Repository<CenterRoutingRule>,
     private dataSource: DataSource,
     @Inject(forwardRef(() => DataSyncGateway))
     private dataSyncGateway: DataSyncGateway,
   ) {}
+
+  // Default fields that can be toggled for filters/columns
+  private FILTERABLE_FIELDS = [
+    { key: 'leadStatus', label: 'Lead Status', type: 'filter' },
+    { key: 'leadSubStatus', label: 'Lead Sub-status', type: 'filter' },
+    { key: 'leadSource', label: 'Lead Source', type: 'filter' },
+    { key: 'industry', label: 'Industry', type: 'filter' },
+    { key: 'locationCity', label: 'City', type: 'filter' },
+    { key: 'locationState', label: 'State', type: 'filter' },
+    { key: 'nationality', label: 'Nationality', type: 'filter' },
+    { key: 'program', label: 'Program', type: 'filter' },
+    { key: 'specialization', label: 'Specialization', type: 'filter' },
+    { key: 'batch', label: 'Batch', type: 'filter' },
+    { key: 'highestQualification', label: 'Qualification', type: 'filter' },
+    { key: 'yearsOfExperience', label: 'Experience', type: 'filter' },
+    { key: 'gender', label: 'Gender', type: 'filter' },
+  ];
+
+  private COLUMN_FIELDS = [
+    { key: 'referenceNo', label: 'Reference No' },
+    { key: 'name', label: 'Name' },
+    { key: 'email', label: 'Email' },
+    { key: 'mobileNumber', label: 'Mobile' },
+    { key: 'company', label: 'Company' },
+    { key: 'leadStatus', label: 'Status' },
+    { key: 'leadSubStatus', label: 'Sub-status' },
+    { key: 'leadSource', label: 'Source' },
+    { key: 'industry', label: 'Industry' },
+    { key: 'locationCity', label: 'City' },
+    { key: 'locationState', label: 'State' },
+    { key: 'program', label: 'Program' },
+    { key: 'specialization', label: 'Specialization' },
+    { key: 'batch', label: 'Batch' },
+    { key: 'highestQualification', label: 'Qualification' },
+    { key: 'yearsOfExperience', label: 'Experience' },
+    { key: 'estimatedValue', label: 'Value' },
+    { key: 'nextFollowUpAt', label: 'Next Follow-up' },
+    { key: 'lastCallDisposition', label: 'Last Call Disposition' },
+    { key: 'lastCallNotes', label: 'Last Call Notes' },
+    { key: 'counselor', label: 'Counselor' },
+    { key: 'owner', label: 'Owner' },
+    { key: 'dateEntered', label: 'Created Date' },
+  ];
+
+  // ==================== CENTER FIELD VISIBILITY ====================
+
+  async getCenterFieldVisibility(user: any) {
+    const role = normalizeRole(user?.role, user?.isAdmin);
+    const centerName = user?.centerName;
+
+    if (!centerName) {
+      // Return all fields as enabled for super-admin or users without center
+      return {
+        filters: this.FILTERABLE_FIELDS.map(f => ({ ...f, enabled: true })),
+        columns: this.COLUMN_FIELDS.map(f => ({ ...f, enabled: true })),
+      };
+    }
+
+    // Get existing settings for this center
+    const existing = await this.centerFieldVisibilityRepo.find({
+      where: { centerName } as any,
+    });
+
+    const existingMap = new Map<string, CenterFieldVisibility>();
+    existing.forEach(e => existingMap.set(e.fieldKey, e));
+
+    // Build filter fields with enabled status
+    const filters = this.FILTERABLE_FIELDS.map(f => {
+      const setting = existingMap.get(f.key);
+      return {
+        key: f.key,
+        label: f.label,
+        enabled: setting ? setting.filterEnabled : true, // Default enabled
+      };
+    });
+
+    // Build column fields with enabled status
+    const columns = this.COLUMN_FIELDS.map(f => {
+      const setting = existingMap.get(f.key);
+      return {
+        key: f.key,
+        label: f.label,
+        enabled: setting ? setting.columnEnabled : true, // Default enabled
+      };
+    });
+
+    return { filters, columns };
+  }
+
+  async saveCenterFieldVisibility(
+    settings: Array<{ key: string; filterEnabled?: boolean; columnEnabled?: boolean }>,
+    user: any,
+  ) {
+    const role = normalizeRole(user?.role, user?.isAdmin);
+    const centerName = user?.centerName;
+
+    // Only center managers can save settings
+    if (role !== 'center-manager' || !centerName) {
+      throw new ForbiddenException('Only center managers can modify field visibility settings');
+    }
+
+    for (const s of settings) {
+      if (!s.key) continue;
+
+      const existing = await this.centerFieldVisibilityRepo.findOne({
+        where: { centerName, fieldKey: s.key } as any,
+      });
+
+      if (existing) {
+        if (typeof s.filterEnabled === 'boolean') existing.filterEnabled = s.filterEnabled;
+        if (typeof s.columnEnabled === 'boolean') existing.columnEnabled = s.columnEnabled;
+        await this.centerFieldVisibilityRepo.save(existing);
+      } else {
+        const newSetting = this.centerFieldVisibilityRepo.create({
+          centerName,
+          fieldKey: s.key,
+          filterEnabled: s.filterEnabled ?? true,
+          columnEnabled: s.columnEnabled ?? true,
+        });
+        await this.centerFieldVisibilityRepo.save(newSetting);
+      }
+    }
+
+    return this.getCenterFieldVisibility(user);
+  }
+
   // Field settings
   private DEFAULT_FIELD_SETTINGS: Array<{key:string; visible:boolean; required:boolean}> = [
     // Identity & contact (mandatory core fields)
@@ -473,7 +602,7 @@ export class LeadsService {
       
       // Emit WebSocket event for real-time update
       try {
-        this.dataSyncGateway.emitLeadCreated(result);
+        this.dataSyncGateway.emitLeadCreated(result, user?.centerName);
       } catch (wsError) {
         console.error('Failed to emit lead:created event:', wsError);
       }
@@ -859,7 +988,7 @@ export class LeadsService {
 
       // Emit WebSocket event for real-time update
       try {
-        this.dataSyncGateway.emitLeadUpdated(saved);
+        this.dataSyncGateway.emitLeadUpdated(saved, user?.centerName);
       } catch (wsError) {
         console.error('Failed to emit lead:updated event:', wsError);
       }
@@ -875,11 +1004,12 @@ export class LeadsService {
 
   async remove(id: string, user?: any): Promise<void> {
     const lead = await this.findOne(id, user);
+    const assignedUserId = lead?.assignedUserId;
     await this.leadRepository.remove(lead);
     
     // Emit WebSocket event for real-time update
     try {
-      this.dataSyncGateway.emitLeadDeleted(id);
+      this.dataSyncGateway.emitLeadDeleted(id, user?.centerName, assignedUserId);
     } catch (wsError) {
       console.error('Failed to emit lead:deleted event:', wsError);
     }
@@ -933,7 +1063,7 @@ export class LeadsService {
     
     // Emit WebSocket event for real-time update
     try {
-      this.dataSyncGateway.emitLeadAssigned(saved);
+      this.dataSyncGateway.emitLeadAssigned(saved, counselor?.centerName || user?.centerName);
     } catch (wsError) {
       console.error('Failed to emit lead:assigned event:', wsError);
     }

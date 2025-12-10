@@ -11,6 +11,7 @@ import webSocketService from './services/webSocketService';
 import nativeDialerService from './services/nativeDialerService';
 import Layout from './components/layout/Layout';
 import LoginPage from './pages/auth/LoginPage';
+import DemoRequestPage from './pages/auth/DemoRequestPage';
 import Dashboard from './pages/dashboard/Dashboard';
 import AccountsPage from './pages/accounts/AccountsPage';
 // Contacts removed
@@ -32,6 +33,7 @@ import UsersPage from './pages/settings/UsersPage';
 import LeadFieldSettingsPage from './pages/settings/LeadFieldSettingsPage';
 import SettingsPage from './pages/settings/SettingsPage';
 import RulePage from './pages/rules/RulePage';
+import CallManagementPage from './pages/calls/CallManagementPage';
 
 // Protected Route Component
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -118,6 +120,14 @@ const App: React.FC = () => {
             </PublicRoute>
           }
         />
+        <Route
+          path="/register"
+          element={
+            <PublicRoute>
+              <DemoRequestPage />
+            </PublicRoute>
+          }
+        />
 
         {/* Protected Routes */}
         <Route
@@ -133,6 +143,8 @@ const App: React.FC = () => {
                   {/* Leads visible only to Center Manager and Counselor; extra check inside page */}
                   <Route path="/leads" element={<LeadsPage />} />
                   <Route path="/leads/:id" element={<LeadDetailPage />} />
+                  {/* Call Management page */}
+                  <Route path="/calls" element={<CallManagementPage />} />
                   {/* Opportunities replaced with Coming Soon UI */}
                   <Route path="/opportunities/*" element={<ComingSoon title="Opportunities" subtitle="This feature is coming soon." />} />
                   <Route path="/campaigns/*" element={<CampaignsPage />} />

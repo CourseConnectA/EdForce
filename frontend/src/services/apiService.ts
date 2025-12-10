@@ -29,7 +29,7 @@ class ApiService {
     } 
     // Fallback: If native platform but no explicit URL, use network IP
     else if (isNative) {
-      baseURL = 'http://192.168.0.104:3001/api';
+      baseURL = 'http://192.168.0.102:3001/api';
       console.log('Using native fallback API URL:', baseURL);
     }
     // Development mode uses proxy
@@ -59,6 +59,24 @@ class ApiService {
     });
     
     console.log('Axios instance created with baseURL:', this.instance.defaults.baseURL);
+
+    // Refresh de-duplication and request queueing - MUST be declared before interceptors
+    let isRefreshing = false;
+    let refreshPromise: Promise<any> | null = null;
+    const queuedRequests: Array<(token: string) => void> = [];
+    const queueRequest = (cb: (token: string) => void) => queuedRequests.push(cb);
+    const resolveQueued = (token: string) => {
+      while (queuedRequests.length) {
+        const cb = queuedRequests.shift();
+        try { cb && cb(token); } catch {}
+      }
+    };
+    const rejectQueued = () => {
+      while (queuedRequests.length) {
+        const cb = queuedRequests.shift();
+        try { cb && cb(''); } catch {}
+      }
+    };
 
     // Request interceptor: attach token; if missing, attempt a pre-emptive refresh
     this.instance.interceptors.request.use(
@@ -117,24 +135,6 @@ class ApiService {
       },
       (error) => Promise.reject(error)
     );
-
-    // Refresh de-duplication and request queueing
-  let isRefreshing = false;
-  let refreshPromise: Promise<any> | null = null;
-    const queuedRequests: Array<(token: string) => void> = [];
-    const queueRequest = (cb: (token: string) => void) => queuedRequests.push(cb);
-    const resolveQueued = (token: string) => {
-      while (queuedRequests.length) {
-        const cb = queuedRequests.shift();
-        try { cb && cb(token); } catch {}
-      }
-    };
-    const rejectQueued = () => {
-      while (queuedRequests.length) {
-        const cb = queuedRequests.shift();
-        try { cb && cb(''); } catch {}
-      }
-    };
 
     // Response interceptor to handle token refresh
     this.instance.interceptors.response.use(

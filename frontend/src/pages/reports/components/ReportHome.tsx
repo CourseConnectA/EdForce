@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Box, Button, Grid, IconButton, List, ListItemButton, ListItemText, ListSubheader, Menu, MenuItem, Snackbar, TextField, Divider, Dialog, DialogTitle, DialogContent, DialogActions, ListItemIcon, Checkbox, useTheme, useMediaQuery, Drawer, Stack, Typography } from '@mui/material';
-import { Star, StarBorder, MoreVert, FilterList as FilterListIcon, Add as AddIcon, Close as CloseIcon } from '@mui/icons-material';
+import { Box, Button, Grid, IconButton, List, ListItemButton, ListItemText, ListSubheader, Menu, MenuItem, Snackbar, TextField, Divider, Dialog, DialogTitle, DialogContent, DialogActions, ListItemIcon, Checkbox, useTheme, useMediaQuery, Drawer, Stack, Typography, Paper, InputAdornment, alpha } from '@mui/material';
+import { Star, StarBorder, MoreVert, FilterList as FilterListIcon, Add as AddIcon, Close as CloseIcon, Search as SearchIcon, FolderOutlined, Assessment as ReportIcon, TrendingUp } from '@mui/icons-material';
 import { DataGrid, GridColDef, GridRowSelectionModel, GridColumnVisibilityModel } from '@mui/x-data-grid';
 import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import PageHeader from '@/components/common/PageHeader';
 import reportsService, { ReportRow, ReportFolder } from '../../../services/reportsService';
 import { RootState } from '../../../store/store';
+import { screenshotColors, glassMorphism } from '@/theme/theme';
 
 const ReportHome: React.FC = () => {
   const navigate = useNavigate();
@@ -122,17 +122,37 @@ const ReportHome: React.FC = () => {
   ], [folders, user]);
 
   return (
-    <Box sx={{ px: isMobile ? 0 : 1 }}>
+    <Box sx={{ minHeight: '100vh' }}>
       {/* Mobile-optimized header */}
       {isMobile ? (
-        <Box sx={{ mb: 2 }}>
-          <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}>
-            <Typography variant="h6" sx={{ fontWeight: 700 }}>Reports</Typography>
+        <Box sx={{ mb: 2, px: 1 }}>
+          <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+            <Stack direction="row" alignItems="center" spacing={1}>
+              <Box sx={{ 
+                width: 40, 
+                height: 40, 
+                borderRadius: '12px', 
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}>
+                <TrendingUp sx={{ color: '#fff', fontSize: 22 }} />
+              </Box>
+              <Typography variant="h6" sx={{ fontWeight: 700 }}>Reports</Typography>
+            </Stack>
             <Button 
               variant="contained" 
               size="small" 
               startIcon={<AddIcon />}
               onClick={() => navigate('/reports/new')}
+              sx={{
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                borderRadius: '20px',
+                textTransform: 'none',
+                fontWeight: 600,
+                px: 2,
+              }}
             >
               New
             </Button>
@@ -140,13 +160,37 @@ const ReportHome: React.FC = () => {
           <Stack direction="row" spacing={1} alignItems="center">
             <TextField 
               size="small" 
-              placeholder="Search..." 
+              placeholder="Search reports..." 
               value={search} 
               onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-              sx={{ flex: 1 }}
-              InputProps={{ sx: { fontSize: '0.85rem' } }}
+              sx={{ 
+                flex: 1,
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: '12px',
+                  backgroundColor: 'rgba(255,255,255,0.9)',
+                },
+              }}
+              InputProps={{ 
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon sx={{ color: 'text.secondary', fontSize: 20 }} />
+                  </InputAdornment>
+                ),
+                sx: { fontSize: '0.85rem' } 
+              }}
             />
-            <IconButton onClick={() => setSidebarOpen(true)} size="small" sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
+            <IconButton 
+              onClick={() => setSidebarOpen(true)} 
+              size="small" 
+              sx={{ 
+                border: '1px solid', 
+                borderColor: 'divider', 
+                borderRadius: '12px',
+                backgroundColor: 'rgba(255,255,255,0.9)',
+                width: 40,
+                height: 40,
+              }}
+            >
               <FilterListIcon />
             </IconButton>
           </Stack>
@@ -156,7 +200,7 @@ const ReportHome: React.FC = () => {
               color="error" 
               size="small" 
               onClick={handleBulkDelete}
-              sx={{ mt: 1 }}
+              sx={{ mt: 1, borderRadius: '12px' }}
               fullWidth
             >
               Delete Selected ({selected.length})
@@ -164,17 +208,80 @@ const ReportHome: React.FC = () => {
           )}
         </Box>
       ) : (
-        <PageHeader
-          title="Reports"
-          subtitle={`${total} items`}
-          actions={(
-            <>
-              <TextField size="small" placeholder="Search reports..." value={search} onChange={(e)=>{ setSearch(e.target.value); setPage(1); }} />
-              <Button variant="contained" onClick={()=>navigate('/reports/new')}>New Report</Button>
-              {selected.length>0 && <Button variant="outlined" color="error" onClick={handleBulkDelete}>Delete Selected</Button>}
-            </>
-          )}
-        />
+        /* Desktop header with gradient styling */
+        <Box sx={{ mb: 3, px: 1 }}>
+          <Stack direction="row" justifyContent="space-between" alignItems="center">
+            <Stack direction="row" alignItems="center" spacing={2}>
+              <Box sx={{ 
+                width: 56, 
+                height: 56, 
+                borderRadius: '16px', 
+                background: '#303030',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 8px 24px rgba(102, 126, 234, 0.35)',
+              }}>
+                <TrendingUp sx={{ color: '#fff', fontSize: 28 }} />
+              </Box>
+              <Box>
+                <Typography variant="h4" sx={{ fontWeight: 700, color: screenshotColors.darkText }}>Reports</Typography>
+                <Typography variant="body2" color="text.secondary">{total} reports available</Typography>
+              </Box>
+            </Stack>
+            <Stack direction="row" spacing={2} alignItems="center">
+              <TextField 
+                size="small" 
+                placeholder="Search reports..." 
+                value={search} 
+                onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+                sx={{ 
+                  minWidth: 280,
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: '12px',
+                    backgroundColor: 'rgba(255,255,255,0.9)',
+                  },
+                }}
+                InputProps={{ 
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchIcon sx={{ color: 'text.secondary' }} />
+                    </InputAdornment>
+                  ),
+                }}
+              />
+              <Button 
+                variant="contained" 
+                startIcon={<AddIcon />}
+                onClick={() => navigate('/reports/new')}
+                sx={{
+                  background: '#303030',
+                  borderRadius: '12px',
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  px: 3,
+                  py: 1,
+                  boxShadow: '0 4px 14px rgba(102, 126, 234, 0.4)',
+                  '&:hover': {
+                    boxShadow: '0 6px 20px rgba(102, 126, 234, 0.5)',
+                  },
+                }}
+              >
+                New Report
+              </Button>
+              {selected.length > 0 && (
+                <Button 
+                  variant="outlined" 
+                  color="error" 
+                  onClick={handleBulkDelete}
+                  sx={{ borderRadius: '12px' }}
+                >
+                  Delete Selected
+                </Button>
+              )}
+            </Stack>
+          </Stack>
+        </Box>
       )}
 
       {/* Mobile sidebar drawer */}
@@ -182,37 +289,71 @@ const ReportHome: React.FC = () => {
         anchor="left" 
         open={sidebarOpen} 
         onClose={() => setSidebarOpen(false)}
-        PaperProps={{ sx: { width: '80vw', maxWidth: 300 } }}
+        PaperProps={{ 
+          sx: { 
+            width: '80vw', 
+            maxWidth: 300,
+            background: 'linear-gradient(180deg, #f8f9ff 0%, #ffffff 100%)',
+          } 
+        }}
       >
         <Box sx={{ p: 2 }}>
           <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
-            <Typography variant="h6">Filters</Typography>
+            <Stack direction="row" alignItems="center" spacing={1}>
+              <FolderOutlined sx={{ color: '#667eea' }} />
+              <Typography variant="h6" sx={{ fontWeight: 600 }}>Filters</Typography>
+            </Stack>
             <IconButton onClick={() => setSidebarOpen(false)} size="small" aria-label="close">
               <CloseIcon />
             </IconButton>
           </Stack>
-          <List dense>
-            <ListItemButton selected={tab==='recent'} onClick={()=>{ setTab('recent'); setActiveFolderId(null); setPage(1); setSidebarOpen(false); }}>
+          <List dense sx={{ '& .MuiListItemButton-root': { borderRadius: '10px', mb: 0.5 } }}>
+            <ListItemButton 
+              selected={tab==='recent'} 
+              onClick={()=>{ setTab('recent'); setActiveFolderId(null); setPage(1); setSidebarOpen(false); }}
+              sx={{ '&.Mui-selected': { backgroundColor: alpha('#667eea', 0.12) } }}
+            >
               <ListItemText primary="Recent" />
             </ListItemButton>
-            <ListItemButton selected={tab==='mine'} onClick={()=>{ setTab('mine'); setActiveFolderId(null); setPage(1); setSidebarOpen(false); }}>
+            <ListItemButton 
+              selected={tab==='mine'} 
+              onClick={()=>{ setTab('mine'); setActiveFolderId(null); setPage(1); setSidebarOpen(false); }}
+              sx={{ '&.Mui-selected': { backgroundColor: alpha('#667eea', 0.12) } }}
+            >
               <ListItemText primary="Created by Me" />
             </ListItemButton>
-            <ListItemButton selected={tab==='shared'} onClick={()=>{ setTab('shared'); setActiveFolderId(null); setPage(1); setSidebarOpen(false); }}>
+            <ListItemButton 
+              selected={tab==='shared'} 
+              onClick={()=>{ setTab('shared'); setActiveFolderId(null); setPage(1); setSidebarOpen(false); }}
+              sx={{ '&.Mui-selected': { backgroundColor: alpha('#667eea', 0.12) } }}
+            >
               <ListItemText primary="Shared with Me" />
             </ListItemButton>
             {!isCounselor && (
-              <ListItemButton selected={tab==='all'} onClick={()=>{ setTab('all'); setActiveFolderId(null); setPage(1); setSidebarOpen(false); }}>
+              <ListItemButton 
+                selected={tab==='all'} 
+                onClick={()=>{ setTab('all'); setActiveFolderId(null); setPage(1); setSidebarOpen(false); }}
+                sx={{ '&.Mui-selected': { backgroundColor: alpha('#667eea', 0.12) } }}
+              >
                 <ListItemText primary="All Reports" />
               </ListItemButton>
             )}
-            <Divider sx={{ my: 1 }} />
-            <ListSubheader>Folders</ListSubheader>
-            <ListItemButton selected={tab==='categories' && !activeFolderId} onClick={()=>{ setTab('categories'); setActiveFolderId(null); setPage(1); setSidebarOpen(false); }}>
+            <Divider sx={{ my: 1.5 }} />
+            <ListSubheader sx={{ backgroundColor: 'transparent', fontWeight: 600 }}>Folders</ListSubheader>
+            <ListItemButton 
+              selected={tab==='categories' && !activeFolderId} 
+              onClick={()=>{ setTab('categories'); setActiveFolderId(null); setPage(1); setSidebarOpen(false); }}
+              sx={{ '&.Mui-selected': { backgroundColor: alpha('#667eea', 0.12) } }}
+            >
               <ListItemText primary="All Folders" />
             </ListItemButton>
             {(folders||[]).map((f)=> (
-              <ListItemButton key={f.id} selected={activeFolderId===f.id} onClick={()=>{ setTab('categories'); setActiveFolderId(f.id); setPage(1); setSidebarOpen(false); }}>
+              <ListItemButton 
+                key={f.id} 
+                selected={activeFolderId===f.id} 
+                onClick={()=>{ setTab('categories'); setActiveFolderId(f.id); setPage(1); setSidebarOpen(false); }}
+                sx={{ '&.Mui-selected': { backgroundColor: alpha('#667eea', 0.12) } }}
+              >
                 <ListItemText primary={f.name} />
               </ListItemButton>
             ))}
@@ -220,96 +361,200 @@ const ReportHome: React.FC = () => {
         </Box>
       </Drawer>
 
-      <Grid container spacing={2}>
+      <Grid container spacing={2} sx={{ px: isMobile ? 1 : 0 }}>
         {/* Desktop sidebar */}
         {!isMobile && (
           <Grid item xs={12} md={3} lg={2}>
-            <List
-              subheader={<ListSubheader component="div">Reports</ListSubheader>}
-              sx={{ bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider', borderRadius: 1 }}
+            <Paper
+              elevation={0}
+              sx={{ 
+                bgcolor: 'rgba(255,255,255,0.8)', 
+                backdropFilter: 'blur(10px)',
+                border: '1px solid', 
+                borderColor: alpha('#667eea', 0.15), 
+                borderRadius: '16px',
+                overflow: 'hidden',
+              }}
             >
-              <ListItemButton selected={tab==='recent'} onClick={()=>{ setTab('recent'); setActiveFolderId(null); setPage(1); }}>
-                <ListItemText primary="Recent" />
-              </ListItemButton>
-              <ListItemButton selected={tab==='mine'} onClick={()=>{ setTab('mine'); setActiveFolderId(null); setPage(1); }}>
-                <ListItemText primary="Created by Me" />
-              </ListItemButton>
-              <ListItemButton selected={tab==='shared'} onClick={()=>{ setTab('shared'); setActiveFolderId(null); setPage(1); }}>
-                <ListItemText primary="Shared with Me" />
-              </ListItemButton>
-              {!isCounselor && (
-                <ListItemButton selected={tab==='all'} onClick={()=>{ setTab('all'); setActiveFolderId(null); setPage(1); }}>
-                  <ListItemText primary="All Reports" />
+              <List
+                subheader={
+                  <ListSubheader 
+                    component="div" 
+                    sx={{ 
+                      bgcolor: 'transparent', 
+                      fontWeight: 700,
+                      fontSize: '0.9rem',
+                      color: screenshotColors.darkText,
+                    }}
+                  >
+                    Reports
+                  </ListSubheader>
+                }
+                sx={{ '& .MuiListItemButton-root': { borderRadius: '8px', mx: 1, mb: 0.5 } }}
+              >
+                <ListItemButton 
+                  selected={tab==='recent'} 
+                  onClick={()=>{ setTab('recent'); setActiveFolderId(null); setPage(1); }}
+                  sx={{ '&.Mui-selected': { backgroundColor: alpha('#667eea', 0.12) } }}
+                >
+                  <ListItemText primary="Recent" />
                 </ListItemButton>
-              )}
-              <Divider />
-              <ListSubheader component="div" sx={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-                <Box>Folders</Box>
-                <IconButton size="small" onClick={()=>setCreateFolderOpen(true)} aria-label="new-folder">+</IconButton>
-                {activeFolderId && (
-                  <IconButton size="small" onClick={(e)=>setFolderMenuAnchor(e.currentTarget)} aria-label="folder-actions"><MoreVert/></IconButton>
+                <ListItemButton 
+                  selected={tab==='mine'} 
+                  onClick={()=>{ setTab('mine'); setActiveFolderId(null); setPage(1); }}
+                  sx={{ '&.Mui-selected': { backgroundColor: alpha('#667eea', 0.12) } }}
+                >
+                  <ListItemText primary="Created by Me" />
+                </ListItemButton>
+                <ListItemButton 
+                  selected={tab==='shared'} 
+                  onClick={()=>{ setTab('shared'); setActiveFolderId(null); setPage(1); }}
+                  sx={{ '&.Mui-selected': { backgroundColor: alpha('#667eea', 0.12) } }}
+                >
+                  <ListItemText primary="Shared with Me" />
+                </ListItemButton>
+                {!isCounselor && (
+                  <ListItemButton 
+                    selected={tab==='all'} 
+                    onClick={()=>{ setTab('all'); setActiveFolderId(null); setPage(1); }}
+                    sx={{ '&.Mui-selected': { backgroundColor: alpha('#667eea', 0.12) } }}
+                  >
+                    <ListItemText primary="All Reports" />
+                  </ListItemButton>
                 )}
-              </ListSubheader>
-              <ListItemButton selected={tab==='categories' && !activeFolderId} onClick={()=>{ setTab('categories'); setActiveFolderId(null); setPage(1); }}>
-                <ListItemText primary="All Folders" />
-              </ListItemButton>
-              {(folders||[]).map((f)=> (
-                <ListItemButton key={f.id} selected={activeFolderId===f.id} onClick={()=>{ setTab('categories'); setActiveFolderId(f.id); setPage(1); }}>
-                  <ListItemText primary={f.name} />
+                <Divider sx={{ my: 1.5, mx: 1 }} />
+                <ListSubheader 
+                  component="div" 
+                  sx={{
+                    display:'flex',
+                    alignItems:'center',
+                    justifyContent:'space-between',
+                    bgcolor: 'transparent',
+                    fontWeight: 600,
+                  }}
+                >
+                  <Box>Folders</Box>
+                  <Stack direction="row" spacing={0.5}>
+                    <IconButton size="small" onClick={()=>setCreateFolderOpen(true)} aria-label="new-folder">
+                      <AddIcon fontSize="small" />
+                    </IconButton>
+                    {activeFolderId && (
+                      <IconButton size="small" onClick={(e)=>setFolderMenuAnchor(e.currentTarget)} aria-label="folder-actions">
+                        <MoreVert fontSize="small" />
+                      </IconButton>
+                    )}
+                  </Stack>
+                </ListSubheader>
+                <ListItemButton 
+                  selected={tab==='categories' && !activeFolderId} 
+                  onClick={()=>{ setTab('categories'); setActiveFolderId(null); setPage(1); }}
+                  sx={{ '&.Mui-selected': { backgroundColor: alpha('#667eea', 0.12) } }}
+                >
+                  <ListItemText primary="All Folders" />
                 </ListItemButton>
-              ))}
-              <Divider />
-              <ListSubheader component="div">Favorites</ListSubheader>
-              <ListItemButton onClick={()=>{/* later: favorites filter */}}>
-                <ListItemText primary="All Favorites" />
-              </ListItemButton>
-            </List>
+                {(folders||[]).map((f)=> (
+                  <ListItemButton 
+                    key={f.id} 
+                    selected={activeFolderId===f.id} 
+                    onClick={()=>{ setTab('categories'); setActiveFolderId(f.id); setPage(1); }}
+                    sx={{ '&.Mui-selected': { backgroundColor: alpha('#667eea', 0.12) } }}
+                  >
+                    <ListItemText primary={f.name} />
+                  </ListItemButton>
+                ))}
+                <Divider sx={{ my: 1.5, mx: 1 }} />
+                <ListSubheader component="div" sx={{ bgcolor: 'transparent', fontWeight: 600 }}>Favorites</ListSubheader>
+                <ListItemButton onClick={()=>{/* later: favorites filter */}}>
+                  <ListItemText primary="All Favorites" />
+                </ListItemButton>
+              </List>
+            </Paper>
           </Grid>
         )}
         <Grid item xs={12} md={isMobile ? 12 : 9} lg={isMobile ? 12 : 10}>
-          {/* Mobile: Card view for reports */}
+          {/* Mobile: Beautiful card view for reports */}
           {isMobile ? (
             <Box>
               {loading ? (
-                <Typography color="text.secondary" sx={{ py: 4, textAlign: 'center' }}>Loading...</Typography>
+                <Box sx={{ 
+                  py: 8, 
+                  textAlign: 'center',
+                  ...glassMorphism,
+                  borderRadius: '16px',
+                }}>
+                  <Typography color="text.secondary">Loading...</Typography>
+                </Box>
               ) : rows.length === 0 ? (
-                <Typography color="text.secondary" sx={{ py: 4, textAlign: 'center' }}>No reports found</Typography>
+                <Box sx={{ 
+                  py: 8, 
+                  textAlign: 'center',
+                  ...glassMorphism,
+                  borderRadius: '16px',
+                }}>
+                  <ReportIcon sx={{ fontSize: 48, color: 'text.disabled', mb: 1 }} />
+                  <Typography color="text.secondary">No reports found</Typography>
+                  <Button 
+                    variant="contained" 
+                    size="small" 
+                    onClick={() => navigate('/reports/new')}
+                    sx={{ 
+                      mt: 2,
+                      background: '#303030',
+                      borderRadius: '20px',
+                    }}
+                  >
+                    Create Your First Report
+                  </Button>
+                </Box>
               ) : (
                 <Stack spacing={1.5}>
                   {rows.map((r) => {
                     const me = (user as any)?.id;
                     const isStar = Array.isArray(r.starredBy) && r.starredBy.includes(me);
                     return (
-                      <Box
+                      <Paper
                         key={r.id}
+                        elevation={0}
                         onClick={() => navigate(`/reports/view/${r.id}`)}
                         sx={{
-                          p: 1.5,
-                          borderRadius: 2,
+                          p: 2,
+                          borderRadius: '16px',
                           border: '1px solid',
-                          borderColor: 'divider',
-                          bgcolor: 'background.paper',
+                          borderColor: alpha('#667eea', 0.15),
+                          bgcolor: 'rgba(255,255,255,0.9)',
                           cursor: 'pointer',
-                          '&:active': { bgcolor: 'action.hover' },
+                          transition: 'all 0.2s ease',
+                          '&:active': { 
+                            transform: 'scale(0.98)',
+                            bgcolor: alpha('#667eea', 0.05),
+                          },
                         }}
                       >
-                        <Stack direction="row" alignItems="flex-start" spacing={1}>
-                          <IconButton 
-                            size="small" 
-                            onClick={(e) => { e.stopPropagation(); onStar(r, !isStar); }}
-                            sx={{ mt: -0.5, ml: -0.5 }}
-                          >
-                            {isStar ? <Star color="warning" fontSize="small" /> : <StarBorder fontSize="small" />}
-                          </IconButton>
+                        <Stack direction="row" alignItems="flex-start" spacing={1.5}>
+                          <Box sx={{ 
+                            width: 40, 
+                            height: 40, 
+                            borderRadius: '10px',
+                            background: '#303030',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0,
+                          }}>
+                            <ReportIcon sx={{ color: '#fff', fontSize: 20 }} />
+                          </Box>
                           <Box sx={{ flex: 1, minWidth: 0 }}>
-                            <Typography sx={{ fontWeight: 600, fontSize: '0.9rem', mb: 0.25 }}>{r.name}</Typography>
+                            <Stack direction="row" alignItems="center" spacing={0.5}>
+                              <Typography sx={{ fontWeight: 600, fontSize: '0.95rem' }} noWrap>{r.name}</Typography>
+                              {isStar && <Star sx={{ color: '#ffc107', fontSize: 16 }} />}
+                            </Stack>
                             {r.description && (
-                              <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.75rem', mb: 0.5 }} noWrap>
+                              <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem', mb: 0.5 }} noWrap>
                                 {r.description}
                               </Typography>
                             )}
-                            <Stack direction="row" spacing={1} alignItems="center">
-                              <Typography variant="caption" color="text.secondary">
+                            <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 0.5 }}>
+                              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
                                 {r.createdByFirstName || r.createdByName || 'Unknown'}
                               </Typography>
                               <Typography variant="caption" color="text.disabled">•</Typography>
@@ -318,41 +563,70 @@ const ReportHome: React.FC = () => {
                               </Typography>
                             </Stack>
                           </Box>
-                          <IconButton size="small" onClick={(e) => { e.stopPropagation(); openMenu(e, r); }}>
+                          <IconButton 
+                            size="small" 
+                            onClick={(e) => { e.stopPropagation(); openMenu(e, r); }}
+                            sx={{ mt: -0.5 }}
+                          >
                             <MoreVert fontSize="small" />
                           </IconButton>
                         </Stack>
-                      </Box>
+                      </Paper>
                     );
                   })}
                 </Stack>
               )}
               {/* Mobile pagination */}
               {total > limit && (
-                <Stack direction="row" justifyContent="center" spacing={2} sx={{ mt: 2 }}>
-                  <Button 
-                    size="small" 
-                    disabled={page <= 1}
-                    onClick={() => setPage(p => p - 1)}
-                  >
-                    Prev
-                  </Button>
-                  <Typography variant="body2" sx={{ py: 0.5 }}>
-                    {page} / {Math.ceil(total / limit)}
-                  </Typography>
-                  <Button 
-                    size="small"
-                    disabled={page >= Math.ceil(total / limit)}
-                    onClick={() => setPage(p => p + 1)}
-                  >
-                    Next
-                  </Button>
-                </Stack>
+                <Paper
+                  elevation={0}
+                  sx={{ 
+                    mt: 2, 
+                    p: 1.5, 
+                    borderRadius: '12px',
+                    bgcolor: 'rgba(255,255,255,0.9)',
+                    border: '1px solid',
+                    borderColor: alpha('#667eea', 0.1),
+                  }}
+                >
+                  <Stack direction="row" justifyContent="center" alignItems="center" spacing={2}>
+                    <Button 
+                      size="small" 
+                      disabled={page <= 1}
+                      onClick={() => setPage(p => p - 1)}
+                      sx={{ borderRadius: '8px' }}
+                    >
+                      Prev
+                    </Button>
+                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                      {page} / {Math.ceil(total / limit)}
+                    </Typography>
+                    <Button 
+                      size="small"
+                      disabled={page >= Math.ceil(total / limit)}
+                      onClick={() => setPage(p => p + 1)}
+                      sx={{ borderRadius: '8px' }}
+                    >
+                      Next
+                    </Button>
+                  </Stack>
+                </Paper>
               )}
             </Box>
           ) : (
-            /* Desktop: DataGrid view */
-            <div style={{ height: 540, width:'100%' }}>
+            /* Desktop: DataGrid view with better styling */
+            <Paper
+              elevation={0}
+              sx={{ 
+                height: 560, 
+                width:'100%',
+                borderRadius: '16px',
+                border: '1px solid',
+                borderColor: alpha('#667eea', 0.15),
+                overflow: 'hidden',
+                bgcolor: 'rgba(255,255,255,0.9)',
+              }}
+            >
               <DataGrid
                 rows={rows}
                 columns={columns}
@@ -374,9 +648,18 @@ const ReportHome: React.FC = () => {
                 onRowDoubleClick={(p)=>navigate(`/reports/view/${p.id}`)}
                 columnVisibilityModel={colVis}
                 onColumnVisibilityModelChange={(m)=>setColVis(m)}
-                sx={{ '& .MuiDataGrid-row': { cursor: 'pointer' } }}
+                sx={{ 
+                  border: 'none',
+                  '& .MuiDataGrid-row': { cursor: 'pointer' },
+                  '& .MuiDataGrid-columnHeaders': { 
+                    backgroundColor: alpha('#667eea', 0.05),
+                  },
+                  '& .MuiDataGrid-row:hover': {
+                    backgroundColor: alpha('#667eea', 0.04),
+                  },
+                }}
               />
-            </div>
+            </Paper>
           )}
         </Grid>
       </Grid>

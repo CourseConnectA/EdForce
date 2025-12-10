@@ -9,6 +9,7 @@ class NativeDialerService {
   private hasFinalDispatch = false;
   private fallbackTimer: NodeJS.Timeout | null = null;
   private visibilityHandlerRegistered = false;
+  private nativeEventHandler: ((e: any) => void) | null = null;
 
   async start() {
     if (this.isRunning) {
@@ -30,7 +31,12 @@ class NativeDialerService {
     // Start monitoring & native listener events regardless (MainActivity handles duration)
     this.startMonitoring();
     this.registerVisibilityHandler();
-    window.addEventListener('native-call-finished', (e: any) => {
+    
+    // The native side will auto-sync call logs and dispatch events
+    // We just need to handle them here
+    
+    // Store the handler so we can remove it on stop
+    this.nativeEventHandler = (e: any) => {
       const detail = e?.detail ?? {};
       const source = typeof detail.source === 'string' ? detail.source : 'unknown';
       const rawDuration = detail.duration;
@@ -43,7 +49,14 @@ class NativeDialerService {
         return;
       }
 
-      if (this.hasFinalDispatch) {
+      // Handle incoming-sync events (incoming calls detected on app resume)
+      if (source === 'incoming-sync' || source === 'bulk-sync') {
+        console.log('📥 Incoming call sync event received:', detail);
+        this.handleIncomingCallSync(detail, duration);
+        return;
+      }
+
+      if (this.hasFinalDispatch && source !== 'incoming-sync') {
         console.log('Call already finalized, ignoring subsequent native event from source:', source);
         return;
       }
@@ -57,7 +70,50 @@ class NativeDialerService {
 
       // Ignore any non-calllog events
       console.log('Ignoring non-calllog native event');
-    });
+    };
+    
+    window.addEventListener('native-call-finished', this.nativeEventHandler);
+  }
+
+  private async handleIncomingCallSync(detail: any, duration: number) {
+    // Handle incoming calls from leads - try to match by phone number
+    const phoneNumber = detail.phoneNumber;
+    const callLogType = detail.callLogType;
+    const callLogId = detail.callLogId;
+    const callLogDate = detail.callLogDate;
+
+    if (!phoneNumber) {
+      console.log('No phone number in incoming sync event');
+      return;
+    }
+
+    // Determine call type based on Android call log type
+    // Type 1 = INCOMING, Type 3 = MISSED, Type 5 = REJECTED
+    const isIncoming = callLogType === 1;
+    const isMissed = callLogType === 3 || callLogType === 5 || callLogType === 7;
+
+    console.log('📥 Processing incoming call:', { phoneNumber, callLogType, duration, isIncoming, isMissed });
+
+    const startTimeIso = callLogDate ? new Date(callLogDate).toISOString() : new Date().toISOString();
+    const completedAtIso = callLogDate ? new Date(callLogDate + duration * 1000).toISOString() : new Date().toISOString();
+
+    try {
+      // Log this incoming call to the backend
+      // The backend will need to find the lead by phone number
+      await callLoggingService.logNativeCall({
+        leadId: undefined, // Will be resolved by backend via phone number lookup
+        phoneNumber,
+        startTime: startTimeIso,
+        completedAt: completedAtIso,
+        duration,
+        callLogType,
+        callLogId,
+        source: 'incoming-sync',
+      });
+      console.log('✅ Incoming call logged successfully');
+    } catch (err) {
+      console.error('Failed to log incoming call:', err);
+    }
   }
 
   private startMonitoring() {
@@ -76,7 +132,8 @@ class NativeDialerService {
   async initiateCall(phoneNumber: string): Promise<boolean> {
     console.log('📞 Initiating call request for', phoneNumber);
     this.resetProvisionalState();
-    this.scheduleFallbackPrompt(20000);
+    // Reduced fallback time from 20s to 8s for faster missed call detection
+    this.scheduleFallbackPrompt(8000);
 
     // Use default dialer (tel:). Native listener will capture duration.
     try {
@@ -96,6 +153,13 @@ class NativeDialerService {
     }
     this.resetProvisionalState();
     this.unregisterVisibilityHandler();
+    
+    // Remove native event listener
+    if (this.nativeEventHandler) {
+      window.removeEventListener('native-call-finished', this.nativeEventHandler);
+      this.nativeEventHandler = null;
+    }
+    
     this.isRunning = false;
     console.log('⏹️ Dialer service stopped');
   }
@@ -123,12 +187,83 @@ class NativeDialerService {
     const phoneNumberFromLog = typeof detail.phoneNumber === 'string' ? detail.phoneNumber : undefined;
     const callLogId = typeof detail.callLogId === 'number' ? detail.callLogId : undefined;
 
+    // Check if this is an incoming call (Type 1 = INCOMING, Type 3 = MISSED, Type 5 = REJECTED)
+    const isIncomingCall = callLogType === 1 || callLogType === 3 || callLogType === 5;
+    
+    // Check if we have a pending outgoing call
+    let hasPendingCall = false;
+    try {
+      const pendingRaw = sessionStorage.getItem('pendingCall');
+      hasPendingCall = !!pendingRaw;
+    } catch {
+      // ignore
+    }
+
+    // If this is an incoming call and we don't have a pending outgoing call,
+    // treat it as an incoming call from a lead
+    if (isIncomingCall && !hasPendingCall) {
+      console.log('📥 Detected incoming call from call log:', { callLogType, duration, phoneNumber: phoneNumberFromLog });
+      this.handleIncomingCallFromLog(detail, duration);
+      return;
+    }
+
+    // Otherwise, it's an outgoing call - process normally
     void this.finalizeCall(duration, 'calllog', {
       callLogDate,
       callLogType,
       phoneNumberFromLog,
       callLogId,
     });
+  }
+
+  private async handleIncomingCallFromLog(detail: any, duration: number) {
+    const phoneNumber = detail.phoneNumber;
+    const callLogType = detail.callLogType;
+    const callLogId = detail.callLogId;
+    const callLogDate = detail.callLogDate;
+
+    if (!phoneNumber) {
+      console.log('No phone number in incoming call log event');
+      return;
+    }
+
+    console.log('📥 Processing incoming call from log:', { phoneNumber, callLogType, duration });
+
+    const startTimeIso = callLogDate ? new Date(callLogDate).toISOString() : new Date().toISOString();
+    const completedAtIso = callLogDate ? new Date(callLogDate + duration * 1000).toISOString() : new Date().toISOString();
+
+    try {
+      // Log this incoming call to the backend
+      // The backend will find the lead by phone number
+      const result = await callLoggingService.logNativeCall({
+        leadId: undefined, // Will be resolved by backend via phone number lookup
+        phoneNumber,
+        startTime: startTimeIso,
+        completedAt: completedAtIso,
+        duration,
+        callLogType,
+        callLogId,
+        source: 'calllog-incoming',
+      });
+      
+      if (result) {
+        console.log('✅ Incoming call logged successfully:', result);
+        // Dispatch event for UI update
+        window.dispatchEvent(new CustomEvent('call-completed', { 
+          detail: {
+            phoneNumber,
+            duration,
+            startTime: startTimeIso,
+            completedAt: completedAtIso,
+            callLogType,
+            callId: result.id,
+            source: 'calllog-incoming',
+          }
+        }));
+      }
+    } catch (err) {
+      console.error('Failed to log incoming call:', err);
+    }
   }
 
   private async finalizeCall(
@@ -224,7 +359,7 @@ class NativeDialerService {
     }
   }
 
-  private scheduleFallbackPrompt(delayMs: number = 24000) {
+  private scheduleFallbackPrompt(delayMs: number = 8000) {
     if (this.fallbackTimer) {
       clearTimeout(this.fallbackTimer);
     }
@@ -290,7 +425,8 @@ class NativeDialerService {
 
     const handler = () => {
       if (document.visibilityState === 'visible') {
-        this.scheduleFallbackPrompt(24000);
+        // Reduced from 24s to 8s for faster response
+        this.scheduleFallbackPrompt(8000);
       } else {
         if (this.fallbackTimer) {
           clearTimeout(this.fallbackTimer);

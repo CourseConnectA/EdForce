@@ -27,6 +27,10 @@ class UsersService {
   async deleteUser(id: string): Promise<{ ok: boolean; deleted?: number; cascaded?: number }> {
     return apiService.delete<{ ok: boolean; deleted?: number; cascaded?: number }>(`/users/${id}`);
   }
+
+  async updateMyPresence(presence: PresenceState): Promise<{ ok: boolean }> {
+    return apiService.patch<{ ok: boolean }>('/users/me/presence', { presence });
+  }
 }
 
 export const usersService = new UsersService();

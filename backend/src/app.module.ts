@@ -3,7 +3,8 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BullModule } from '@nestjs/bull';
 // import { CacheModule } from '@nestjs/cache-manager';
-// import { ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 // import * as redisStore from 'cache-manager-redis-store';
@@ -40,6 +41,25 @@ import { CallsModule } from './modules/calls/calls.module';
     // Database
     DatabaseModule,
 
+    // Rate limiting for API protection (prevents DoS and brute force)
+    ThrottlerModule.forRoot([
+      {
+        name: 'short',
+        ttl: 1000,    // 1 second
+        limit: 10,    // 10 requests per second per IP
+      },
+      {
+        name: 'medium',
+        ttl: 10000,   // 10 seconds
+        limit: 50,    // 50 requests per 10 seconds per IP
+      },
+      {
+        name: 'long',
+        ttl: 60000,   // 1 minute
+        limit: 200,   // 200 requests per minute per IP
+      },
+    ]),
+
     // Cache - disabled for now
     // CacheModule.registerAsync({
     //   imports: [ConfigModule],
@@ -51,20 +71,6 @@ import { CallsModule } from './modules/calls/calls.module';
     //   }),
     //   inject: [ConfigService],
     //   isGlobal: true,
-    // }),
-
-    // Rate limiting - disabled for now
-    // ThrottlerModule.forRootAsync({
-    //   imports: [ConfigModule],
-    //   useFactory: (configService: ConfigService) => ({
-    //     throttlers: [
-    //       {
-    //         ttl: configService.get('RATE_LIMIT_WINDOW_MS') || 900000,
-    //         limit: configService.get('RATE_LIMIT_MAX_REQUESTS') || 100,
-    //       },
-    //     ],
-    //   }),
-    //   inject: [ConfigService],
     // }),
 
     // JWT
@@ -122,6 +128,13 @@ import { CallsModule } from './modules/calls/calls.module';
     CallsModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    // Global rate limiting guard
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+  ],
 })
 export class AppModule {}
