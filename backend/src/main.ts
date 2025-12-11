@@ -31,13 +31,21 @@ async function bootstrap() {
 
   // CORS configuration: allow configured origins, and by default allow localhost on any port
   const configuredOrigins = configService.get('CORS_ORIGIN')?.split(',').map(s => s.trim()).filter(Boolean) || [];
+  const isProduction = configService.get('NODE_ENV') === 'production';
+  
   const isAllowedOrigin = (origin?: string) => {
     if (!origin) return true; // allow non-browser or same-origin requests
     if (configuredOrigins.includes(origin)) return true;
-    // Allow any localhost or 127.0.0.1 on any port for dev convenience
-    if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return true;
+    
+    // In production, only allow explicitly configured origins
+    if (isProduction) {
+      return false;
+    }
+    
+    // Development: Allow any localhost or 127.0.0.1 on any port
+    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return true;
     // Allow any local network IP (192.168.x.x, 10.x.x.x) for mobile testing
-    if (/^http:\/\/(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3})(:\d+)?$/.test(origin)) return true;
+    if (/^https?:\/\/(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3})(:\d+)?$/.test(origin)) return true;
     return false;
   };
 
@@ -46,10 +54,13 @@ async function bootstrap() {
       if (isAllowedOrigin(origin)) {
         callback(null, true);
       } else {
+        console.log(`CORS blocked origin: ${origin}`);
         callback(new Error('Not allowed by CORS'));
       }
     },
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Authorization', 'Content-Type', 'X-Requested-With', 'Accept', 'Origin'],
   });
 
   // Global prefix

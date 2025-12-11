@@ -32,7 +32,9 @@ COPY . .
 # Build shared types first
 RUN cd shared && npm run build
 
-# Build frontend
+# Build frontend with production API URL
+ARG VITE_APP_API_URL=https://api.edforce.live/api
+ENV VITE_APP_API_URL=${VITE_APP_API_URL}
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN cd frontend && npm run build
 

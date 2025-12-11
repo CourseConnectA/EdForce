@@ -76,16 +76,15 @@ const GROUPS: Array<{ name: string; keys: string[] }> = [
 ];
 
 // Filter fields available for center-level visibility control
-// Note: counselor, createdAt, isImportant are always enabled (core filters)
-const FILTER_FIELDS: Array<{ key: string; label: string; alwaysEnabled?: boolean }> = [
+const FILTER_FIELDS: Array<{ key: string; label: string }> = [
   { key: 'leadStatus', label: 'Status' },
-  { key: 'counselor', label: 'Counselor', alwaysEnabled: true },
-  { key: 'leadSource', label: 'Source' },
+  { key: 'counselor', label: 'Counselor' },
+  { key: 'leadSource', label: 'Lead Source' },
   { key: 'industry', label: 'Industry' },
   { key: 'locationCity', label: 'City' },
   { key: 'locationState', label: 'State' },
-  { key: 'createdAt', label: 'Created Date', alwaysEnabled: true },
-  { key: 'isImportant', label: 'Important Only', alwaysEnabled: true },
+  { key: 'createdAt', label: 'Created Date' },
+  { key: 'isImportant', label: 'Important Only' },
 ];
 
 // Column fields available for center-level visibility control
@@ -390,7 +389,7 @@ const LeadFieldSettingsPage: React.FC = () => {
               <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider', display: 'flex', alignItems: 'center', gap: 1 }}>
                 <FilterListIcon color="primary" />
                 <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>Filter Fields</Typography>
-                <Chip label={`${FILTER_FIELDS.filter(f => f.alwaysEnabled || getVisibility(f.key).filterEnabled).length}/${FILTER_FIELDS.length} enabled`} size="small" sx={{ ml: 'auto' }} />
+                <Chip label={`${FILTER_FIELDS.filter(f => getVisibility(f.key).filterEnabled).length}/${FILTER_FIELDS.length} enabled`} size="small" sx={{ ml: 'auto' }} />
               </Box>
               <Table size="small">
                 <TableHead>
@@ -402,28 +401,14 @@ const LeadFieldSettingsPage: React.FC = () => {
                 <TableBody>
                   {FILTER_FIELDS.map((field) => {
                     const vis = getVisibility(field.key);
-                    const isAlwaysEnabled = field.alwaysEnabled === true;
                     return (
                       <TableRow key={field.key} hover>
-                        <TableCell>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            {field.label}
-                            {isAlwaysEnabled && (
-                              <Chip
-                                label="Always shown"
-                                size="small"
-                                color="primary"
-                                variant="outlined"
-                                sx={{ fontSize: '0.7rem', height: 20 }}
-                              />
-                            )}
-                          </Box>
-                        </TableCell>
+                        <TableCell>{field.label}</TableCell>
                         <TableCell align="center">
                           <Switch
-                            checked={isAlwaysEnabled || vis.filterEnabled}
+                            checked={vis.filterEnabled}
                             onChange={(e) => setVisibilityLocal(field.key, { filterEnabled: e.target.checked })}
-                            disabled={visibilityLoading || isAlwaysEnabled}
+                            disabled={visibilityLoading}
                           />
                         </TableCell>
                       </TableRow>

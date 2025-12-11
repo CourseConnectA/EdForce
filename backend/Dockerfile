@@ -52,6 +52,6 @@ COPY --chown=nestjs:nestjs backend/package*.json ./
 
 USER nestjs
 
-EXPOSE 3001
+EXPOSE 3000
 
 CMD ["node", "dist/main.js"]

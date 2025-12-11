@@ -2210,15 +2210,13 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
           </Button>
         </Box>
 
-        {anySelected && (
+        {role === 'center-manager' && anySelected && (
           <Box sx={{ position: 'sticky', bottom: 0, left: 0, right: 0, bgcolor: 'background.paper', borderTop: '1px solid', borderColor: 'divider', p: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <Typography variant="body2">{rowSelectionModel.length} selected</Typography>
             <Stack direction="row" spacing={1}>
               <Button size="small" onClick={() => setRowSelectionModel([])}>Clear</Button>
               <Button size="small" variant="outlined" color="error" onClick={handleBulkDeleteClick}>Delete</Button>
-              {(role === 'center-manager' || isSuperAdmin) && (
-                <Button size="small" variant="contained" startIcon={<MoreVertIcon />} onClick={handleBulkAssignClick}>Assign to counselor</Button>
-              )}
+              <Button size="small" variant="contained" startIcon={<MoreVertIcon />} onClick={handleBulkAssignClick}>Assign to counselor</Button>
             </Stack>
           </Box>
         )}
@@ -2607,56 +2605,33 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
       </Dialog>
 
       {/* Import CSV Dialog */}
-      <Dialog open={importDialogOpen} onClose={() => { setImportDialogOpen(false); setImportResult(null); setImportError(''); }} fullScreen={isMobile} maxWidth="sm" fullWidth>
-        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <DownloadIcon color="primary" />
-          Import Leads from CSV
-        </DialogTitle>
+      <Dialog open={importDialogOpen} onClose={() => setImportDialogOpen(false)} fullScreen={isMobile}>
+        <DialogTitle>Import Leads from CSV</DialogTitle>
         <DialogContent>
-          {/* Success/Error Result Display */}
+          {importError && <Alert severity="error" sx={{ mb: 2 }}>{importError}</Alert>}
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ mb: 2 }}>
+            <Button variant="contained" color="primary" onClick={handleDownloadFullSampleCsv} disabled={importing}>
+              Download Sample CSV
+            </Button>
+            <Button variant="outlined" component="label" disabled={importing}>
+              Choose File
+              <input type="file" hidden accept=".csv,text/csv" onChange={(e) => handleImportCsv(e.target.files?.[0] || undefined)} />
+            </Button>
+          </Stack>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+            The sample file contains only the header row. Add one lead per line. Enclose values containing commas in double quotes. To include a literal double quote inside a field, escape it by doubling (e.g. "A ""quoted"" value").
+          </Typography>
           {importResult && (
-            <Alert 
-              severity={importResult.errors?.length > 0 ? 'warning' : 'success'} 
-              sx={{ mb: 2, borderRadius: 2 }}
-              onClose={() => setImportResult(null)}
-            >
-              <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.5 }}>
-                {importResult.errors?.length > 0 ? 'Import Completed with Issues' : 'Import Successful!'}
-              </Typography>
-              <Typography variant="body2">
-                {importResult.created > 0 && (
-                  <span style={{ color: '#2e7d32' }}>✓ {importResult.created} lead{importResult.created !== 1 ? 's' : ''} imported successfully</span>
-                )}
-                {importResult.errors?.length > 0 && (
-                  <span style={{ display: 'block', color: '#d32f2f' }}>✗ {importResult.errors.length} failed to import</span>
-                )}
-              </Typography>
-            </Alert>
-          )}
-          
-          {importError && <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>{importError}</Alert>}
-          
-          {!importResult && (
-            <>
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ mb: 2 }}>
-                <Button variant="contained" color="primary" onClick={handleDownloadFullSampleCsv} disabled={importing} sx={{ borderRadius: 2 }}>
-                  Download Sample CSV
-                </Button>
-                <Button variant="outlined" component="label" disabled={importing} sx={{ borderRadius: 2 }}>
-                  {importing ? 'Importing...' : 'Choose File'}
-                  <input type="file" hidden accept=".csv,text/csv" onChange={(e) => handleImportCsv(e.target.files?.[0] || undefined)} />
-                </Button>
-              </Stack>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-                The sample file contains only the header row. Add one lead per line. Enclose values containing commas in double quotes. To include a literal double quote inside a field, escape it by doubling (e.g. "A ""quoted"" value").
-              </Typography>
-            </>
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="subtitle2">Import Result</Typography>
+              <pre style={{ maxHeight: 200, overflow: 'auto', background: '#f5f5f5', padding: 8, borderRadius: 4 }}>
+                {JSON.stringify(importResult, null, 2)}
+              </pre>
+            </Box>
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => { setImportDialogOpen(false); setImportResult(null); setImportError(''); }} sx={{ borderRadius: 2 }}>
-            {importResult ? 'Done' : 'Close'}
-          </Button>
+          <Button onClick={() => setImportDialogOpen(false)}>Close</Button>
         </DialogActions>
       </Dialog>
 
