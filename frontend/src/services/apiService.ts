@@ -22,17 +22,16 @@ class ApiService {
       platform: isNative ? (window as any).Capacitor.getPlatform() : 'web'
     });
     
-    // For production build with explicit URL (mobile app)
+    // For all production and mobile builds, use explicit API URL if set
     if (explicit) {
       baseURL = explicit;
       console.log('Using explicit API URL:', baseURL);
-    } 
-    // Fallback: If native platform but no explicit URL, use network IP
-    else if (isNative) {
-      baseURL = 'http://192.168.0.102:3001/api';
-      console.log('Using native fallback API URL:', baseURL);
     }
-    // Development mode uses proxy
+    // Development mode: use proxy or local IP for native
+    else if (isDev && isNative) {
+      baseURL = 'http://192.168.0.102:3001/api';
+      console.log('Using native fallback API URL (dev only):', baseURL);
+    }
     else if (isDev) {
       baseURL = '/api';
       console.log('Using dev proxy API URL:', baseURL);

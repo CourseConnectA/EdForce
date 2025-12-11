@@ -25,12 +25,20 @@ class WebSocketService {
     }
 
     // Get API URL from environment or use default
-    const apiUrl = import.meta.env.VITE_APP_API_URL || '/api';
-    const baseUrl = apiUrl.replace('/api', ''); // Remove /api suffix for socket connection
-    
-    console.log('Connecting to WebSocket:', baseUrl);
+    let apiUrl = import.meta.env.VITE_APP_API_URL || '/api';
+    // Remove trailing /api if present
+    let socketUrl = apiUrl.replace(/\/api$/, '');
+    // If socketUrl does not start with http, add window.location.origin
+    if (!/^https?:\/\//.test(socketUrl)) {
+      socketUrl = window.location.origin;
+    }
+    // Use https for production
+    if (window.location.protocol === 'https:') {
+      socketUrl = socketUrl.replace('http://', 'https://');
+    }
+    console.log('Connecting to WebSocket:', socketUrl);
 
-    this.socket = io(baseUrl, {
+    this.socket = io(socketUrl, {
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionDelay: this.reconnectDelay,

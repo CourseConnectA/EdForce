@@ -46,10 +46,10 @@ import { CustomFieldValue } from './entities/custom-field-value.entity';
         migrations: [
           __dirname + '/migrations/*{.ts,.js}',
         ],
-        migrationsRun:
-          configService.get('TYPEORM_SYNCHRONIZE') === 'true'
-            ? false
-            : configService.get('TYPEORM_RUN_MIGRATIONS') !== 'false',
+        // Disable auto-migrations in production - run manually with npm run migration:run
+        migrationsRun: configService.get('NODE_ENV') !== 'production' && 
+          configService.get('TYPEORM_SYNCHRONIZE') !== 'true' &&
+          configService.get('TYPEORM_RUN_MIGRATIONS') === 'true',
         logging: configService.get('NODE_ENV') === 'development',
         autoLoadEntities: true,
         retryDelay: 3000,

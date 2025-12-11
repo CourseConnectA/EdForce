@@ -19,14 +19,14 @@ export class AppController {
     };
   }
 
-  @Get('api')
+  @Get('info')
   @ApiOperation({ summary: 'Get API info' })
   @ApiResponse({ status: 200, description: 'API information' })
   getHello(): object {
     return this.appService.getHello();
   }
 
-  @Get('api/health')
+  @Get('health')
   @ApiOperation({ summary: 'Health check endpoint' })
   @ApiResponse({ status: 200, description: 'Application health status' })
   getHealth(): object {

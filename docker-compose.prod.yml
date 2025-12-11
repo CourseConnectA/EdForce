@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # PostgreSQL Database
   postgres:
@@ -93,6 +91,8 @@ services:
       - SMTP_PORT=${SMTP_PORT:-587}
       - SMTP_USER=${SMTP_USER:-}
       - SMTP_PASS=${SMTP_PASS:-}
+      - TYPEORM_SYNCHRONIZE=${TYPEORM_SYNCHRONIZE:-false}
+      - TYPEORM_RUN_MIGRATIONS=${TYPEORM_RUN_MIGRATIONS:-false}
     depends_on:
       postgres:
         condition: service_healthy

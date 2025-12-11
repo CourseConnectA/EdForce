@@ -1,5 +1,5 @@
 # Frontend Dockerfile
-FROM node:18-alpine AS base
+FROM node:20-alpine AS base
 
 # Install dependencies only when needed
 FROM base AS deps
@@ -11,8 +11,8 @@ COPY package*.json ./
 COPY frontend/package*.json ./frontend/
 COPY shared/package*.json ./shared/
 
-# Install dependencies
-RUN npm ci
+# Install dependencies (including devDependencies for build)
+RUN npm install --legacy-peer-deps
 
 # Development image
 FROM base AS dev
@@ -28,6 +28,12 @@ FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+
+# Install TypeScript globally for build
+RUN npm install -g typescript
+
+# Install frontend dependencies explicitly (ensures @types/uuid is available)
+RUN cd frontend && npm install --legacy-peer-deps
 
 # Build shared types first
 RUN cd shared && npm run build

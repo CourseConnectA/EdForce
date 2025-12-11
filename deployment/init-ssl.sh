@@ -65,27 +65,53 @@ fi
 
 # Use initial nginx config without SSL
 echo -e "${GREEN}Setting up initial nginx configuration...${NC}"
-cp deployment/nginx/conf.d/default.conf.initial deployment/nginx/conf.d/default.conf.bak
+cp deployment/nginx/conf.d/default.conf deployment/nginx/conf.d/default.conf.ssl.bak 2>/dev/null || true
 cp deployment/nginx/conf.d/default.conf.initial deployment/nginx/conf.d/default.conf
 
-# Start nginx with HTTP only for ACME challenge
-echo -e "${GREEN}Starting nginx for ACME challenge...${NC}"
-docker compose -f docker-compose.prod.yml up -d nginx
+# Force restart nginx with HTTP-only config for ACME challenge
+echo -e "${GREEN}Starting nginx for ACME challenge (HTTP only)...${NC}"
+docker compose -f docker-compose.prod.yml --env-file .env.production up -d --force-recreate nginx
 
 # Wait for nginx to be ready
+echo -e "${YELLOW}Waiting for nginx to start...${NC}"
 sleep 5
+
+# Verify nginx config is HTTP-only (no SSL blocks)
+echo -e "${GREEN}Verifying nginx is using HTTP-only config...${NC}"
+docker compose -f docker-compose.prod.yml --env-file .env.production exec nginx nginx -T 2>&1 | grep -q "listen 443" && echo -e "${RED}WARNING: Nginx still has SSL config!${NC}" || echo -e "${GREEN}✓ Nginx is using HTTP-only config${NC}"
+
+# Verify nginx is serving ACME challenge path
+echo -e "${GREEN}Verifying ACME challenge path is accessible...${NC}"
+mkdir -p deployment/certbot/www/.well-known/acme-challenge
+echo "test-$(date +%s)" > deployment/certbot/www/.well-known/acme-challenge/test.txt
+
+# Test ACME path locally
+ACME_TEST=$(docker compose -f docker-compose.prod.yml --env-file .env.production exec nginx curl -s http://localhost/.well-known/acme-challenge/test.txt 2>/dev/null || echo "FAILED")
+if [ "$ACME_TEST" != "FAILED" ]; then
+    echo -e "${GREEN}✓ ACME challenge path is accessible locally${NC}"
+else
+    echo -e "${YELLOW}Note: Could not verify ACME path internally (curl may not be installed in nginx container)${NC}"
+fi
 
 # Request certificates
 echo -e "${GREEN}Requesting SSL certificates from Let's Encrypt...${NC}"
 echo -e "${YELLOW}This may take a minute...${NC}"
+echo -e "${YELLOW}Domains: $DOMAINS${NC}"
 
-docker compose -f docker-compose.prod.yml run --rm certbot certonly \
+# Run certbot with verbose output - override entrypoint since compose has a renewal loop entrypoint
+docker compose -f docker-compose.prod.yml --env-file .env.production run --rm --entrypoint "" certbot \
+    certbot certonly \
     --webroot \
     --webroot-path=/var/www/certbot \
     --email $SSL_EMAIL \
     --agree-tos \
     --no-eff-email \
+    --non-interactive \
+    --verbose \
     $DOMAINS
+
+CERTBOT_EXIT=$?
+echo -e "${YELLOW}Certbot exit code: $CERTBOT_EXIT${NC}"
 
 # Check if certificates were created successfully
 if [ -d "deployment/certbot/conf/live/$DOMAIN" ]; then
@@ -104,12 +130,10 @@ server {
     listen [::]:80;
     server_name edforce.live www.edforce.live;
 
-    # ACME challenge location for Let's Encrypt certificate renewal
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
     }
 
-    # Redirect all other HTTP requests to HTTPS
     location / {
         return 301 https://edforce.live$request_uri;
     }
@@ -117,8 +141,9 @@ server {
 
 # HTTPS - www redirect to non-www
 server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
     server_name www.edforce.live;
 
     ssl_certificate /etc/letsencrypt/live/edforce.live/fullchain.pem;
@@ -131,8 +156,9 @@ server {
 
 # HTTPS - Main Frontend Server
 server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
     server_name edforce.live;
 
     ssl_certificate /etc/letsencrypt/live/edforce.live/fullchain.pem;
@@ -167,7 +193,7 @@ server {
     }
 }
 
-# API Server
+# API Server - HTTP redirect
 server {
     listen 80;
     listen [::]:80;
@@ -182,9 +208,11 @@ server {
     }
 }
 
+# API Server - HTTPS
 server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
     server_name api.edforce.live;
 
     ssl_certificate /etc/letsencrypt/live/edforce.live/fullchain.pem;
@@ -197,13 +225,12 @@ server {
     add_header X-XSS-Protection "1; mode=block" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 
-    add_header Access-Control-Allow-Origin "https://edforce.live" always;
-    add_header Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS" always;
-    add_header Access-Control-Allow-Headers "Authorization, Content-Type, X-Requested-With, Accept, Origin" always;
-    add_header Access-Control-Allow-Credentials "true" always;
-    add_header Access-Control-Max-Age "86400" always;
+    # CORS headers handled by backend, not nginx
 
-    if ($request_method = 'OPTIONS') {
+    limit_req zone=api_limit burst=20 nodelay;
+
+    # Preflight OPTIONS requests
+    location @cors_preflight {
         add_header Access-Control-Allow-Origin "https://edforce.live" always;
         add_header Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS" always;
         add_header Access-Control-Allow-Headers "Authorization, Content-Type, X-Requested-With, Accept, Origin" always;
@@ -214,10 +241,13 @@ server {
         return 204;
     }
 
-    limit_req zone=api_limit burst=20 nodelay;
-
     location ~ ^/api/auth/(login|register) {
         limit_req zone=login_limit burst=5 nodelay;
+        
+        if ($request_method = 'OPTIONS') {
+            return 204;
+        }
+        
         proxy_pass http://backend;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
@@ -231,6 +261,10 @@ server {
     }
 
     location /api {
+        if ($request_method = 'OPTIONS') {
+            return 204;
+        }
+        
         proxy_pass http://backend;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
@@ -285,7 +319,7 @@ NGINX_CONF
     
     # Reload nginx with new SSL configuration
     echo -e "${GREEN}Reloading nginx with SSL configuration...${NC}"
-    docker compose -f docker-compose.prod.yml exec nginx nginx -s reload
+    docker compose -f docker-compose.prod.yml --env-file .env.production exec nginx nginx -s reload
     
     echo ""
     echo -e "${GREEN}========================================${NC}"
