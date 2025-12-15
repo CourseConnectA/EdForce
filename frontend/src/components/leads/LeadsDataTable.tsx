@@ -258,35 +258,21 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
     completedAt?: string;
     source?: string;
   } | null>(null);
+
+  // WhatsApp chooser dialog state
+  const [whatsappDialogOpen, setWhatsappDialogOpen] = useState(false);
+  const [whatsappNumber, setWhatsappNumber] = useState('');
   const [callGuardOpen, setCallGuardOpen] = useState(false);
 
   // Track if pagination is ready for fetching (initialization complete)
-  const [paginationReady, setPaginationReady] = useState(false);
+  const [paginationReady] = useState(true);
 
-  // Initialize pagination from localStorage and handle mobile limit adjustment
+  // Handle mobile limit adjustment on mount
   useEffect(() => {
-    // Only run once on mount
-    let targetLimit = limit;
-    
-    try {
-      const saved = JSON.parse(localStorage.getItem('leads.pagination') || 'null');
-      if (saved && typeof saved === 'object') {
-        if (typeof saved.page === 'number') dispatch(setPage(saved.page));
-        if (typeof saved.limit === 'number') targetLimit = saved.limit;
-      }
-    } catch {}
-    
     // If mobile and limit would be > 6, set to 6
-    if (isMobile && targetLimit > 6) {
+    if (isMobile && limit > 6) {
       dispatch(setLimit(6));
-    } else if (targetLimit !== limit) {
-      dispatch(setLimit(targetLimit));
     }
-    
-    // Mark pagination as ready after a microtask to ensure state updates are applied
-    Promise.resolve().then(() => {
-      setPaginationReady(true);
-    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -767,7 +753,7 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
     void callsService.initiateCall(phoneNumber, leadId);
   };
 
-  // Handle WhatsApp icon click
+  // Handle WhatsApp icon click - show chooser dialog
   const handleWhatsAppClick = (phoneNumber: string) => {
     if (!phoneNumber) return;
     // Clean phone number - remove spaces, dashes, parentheses
@@ -780,7 +766,26 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
     if (!cleanNumber.startsWith('91') && cleanNumber.length === 10) {
       cleanNumber = '91' + cleanNumber;
     }
-    window.open(`https://wa.me/${cleanNumber}`, '_blank');
+    setWhatsappNumber(cleanNumber);
+    setWhatsappDialogOpen(true);
+  };
+
+  // Open selected WhatsApp app
+  const openWhatsApp = (type: 'normal' | 'business') => {
+    setWhatsappDialogOpen(false);
+    if (!whatsappNumber) return;
+    
+    if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
+      // On Android, use intent URLs to open specific app
+      const intentUrl = type === 'business'
+        ? `intent://send?phone=${whatsappNumber}#Intent;scheme=whatsapp;package=com.whatsapp.w4b;end`
+        : `intent://send?phone=${whatsappNumber}#Intent;scheme=whatsapp;package=com.whatsapp;end`;
+      window.location.href = intentUrl;
+    } else {
+      // On web/iOS, use wa.me (will open default WhatsApp)
+      // For business on web, there's no reliable way to force business app
+      window.open(`https://wa.me/${whatsappNumber}`, '_blank');
+    }
   };
 
   // Handle actions menu
@@ -2303,6 +2308,37 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
         </DialogActions>
       </Dialog>
 
+      {/* WhatsApp Chooser Dialog */}
+      <Dialog open={whatsappDialogOpen} onClose={() => setWhatsappDialogOpen(false)}>
+        <DialogTitle>Choose WhatsApp</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ mb: 2 }}>Which WhatsApp would you like to use?</Typography>
+          <Stack spacing={2}>
+            <Button
+              variant="outlined"
+              fullWidth
+              startIcon={<WhatsAppIcon sx={{ color: '#25D366' }} />}
+              onClick={() => openWhatsApp('normal')}
+              sx={{ justifyContent: 'flex-start', py: 1.5 }}
+            >
+              WhatsApp
+            </Button>
+            <Button
+              variant="outlined"
+              fullWidth
+              startIcon={<WhatsAppIcon sx={{ color: '#128C7E' }} />}
+              onClick={() => openWhatsApp('business')}
+              sx={{ justifyContent: 'flex-start', py: 1.5 }}
+            >
+              WhatsApp Business
+            </Button>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setWhatsappDialogOpen(false)}>Cancel</Button>
+        </DialogActions>
+      </Dialog>
+
       {/* Delete Confirmation Dialog */}
       <Dialog open={deleteDialogOpen} onClose={handleDeleteCancel} fullScreen={isMobile}>
         <DialogTitle>Delete Lead</DialogTitle>
@@ -2484,7 +2520,7 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
               onChange={(e) => setSelectedCounselorId(String(e.target.value))}
             >
               {counselors.map(c => (
-                <MenuItem key={c.id} value={c.id}>{`${c.firstName} ${c.lastName}`} — @{c.userName}</MenuItem>
+                <MenuItem key={c.id} value={c.id}>{`${c.firstName} ${c.lastName} - @${c.userName}`}</MenuItem>
               ))}
             </Select>
           </FormControl>
