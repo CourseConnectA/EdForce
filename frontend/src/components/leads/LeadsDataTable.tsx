@@ -324,13 +324,10 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
         return;
       }
 
-      let callId: string | undefined = typeof detail?.callId === 'string' ? detail.callId : undefined;
-      if (!callId) {
-        const savedLog = await autoPersistCallLog(detail);
-        if (savedLog?.id) {
-          callId = savedLog.id;
-        }
-      }
+      // Get callId from the event detail - nativeDialerService already logs the call
+      // and includes the callId in the event. If callId is missing, the modal will create the log.
+      // We no longer call autoPersistCallLog here to avoid duplicate logging.
+      const callId: string | undefined = typeof detail?.callId === 'string' ? detail.callId : undefined;
 
       // Find the lead to get current status info
       const lead = leads.find(l => l.id === leadId);
@@ -361,7 +358,7 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
     return () => {
       window.removeEventListener('call-completed' as any, handleCallCompleted as any);
     };
-  }, [autoPersistCallLog, leads]);
+  }, [leads]);
 
   // Debounce search input updates -> searchTerm
   useEffect(() => {

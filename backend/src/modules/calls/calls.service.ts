@@ -152,7 +152,36 @@ export class CallsService {
     // Check for duplicate by deviceCallLogId
     if (dto.deviceCallLogId) {
       const existing = await this.callRepo.findOne({ where: { deviceCallLogId: dto.deviceCallLogId } as any });
-      if (existing) return existing; // Already logged
+      if (existing) {
+        console.log(`Call log already exists with deviceCallLogId ${dto.deviceCallLogId}, returning existing record`);
+        return this.mapCallLog(existing);
+      }
+    }
+
+    // Secondary deduplication: check for recent call to same lead/phone within 60 seconds
+    // This prevents duplicates from race conditions where deviceCallLogId might not be set
+    const startTimeDate = new Date(dto.startTime);
+    const startTimeWindow = new Date(startTimeDate.getTime() - 60000); // 60 seconds before
+    const endTimeWindow = new Date(startTimeDate.getTime() + 60000); // 60 seconds after
+    
+    const recentCall = await this.callRepo.createQueryBuilder('call')
+      .where('call.leadId = :leadId', { leadId })
+      .andWhere('call.phoneNumber = :phoneNumber', { phoneNumber: dto.phoneNumber })
+      .andWhere('call.startTime BETWEEN :startWindow AND :endWindow', { 
+        startWindow: startTimeWindow,
+        endWindow: endTimeWindow
+      })
+      .andWhere('call.deleted = :deleted', { deleted: false })
+      .orderBy('call.dateEntered', 'DESC')
+      .getOne();
+
+    if (recentCall) {
+      console.log(`Found recent call log for lead ${leadId} within 60s window, returning existing record`);
+      const hydrated = await this.callRepo.findOne({
+        where: { id: recentCall.id } as any,
+        relations: ['user'],
+      });
+      return this.mapCallLog((hydrated ?? recentCall) as CallLog & { user?: User });
     }
 
     const callLog = this.callRepo.create({
