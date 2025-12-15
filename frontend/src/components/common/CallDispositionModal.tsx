@@ -79,15 +79,6 @@ const CallDispositionModal: React.FC<CallDispositionModalProps> = ({ open, onClo
     return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const computeFallbackDuration = (startIso: string, completedIso?: string) => {
-    const startMs = new Date(startIso).getTime();
-    const endMs = completedIso ? new Date(completedIso).getTime() : Date.now();
-    if (Number.isFinite(startMs) && Number.isFinite(endMs) && endMs >= startMs) {
-      return Math.floor((endMs - startMs) / 1000);
-    }
-    return 0;
-  };
-
   useEffect(() => {
     if (open && callData) {
       console.log('📱 CallDispositionModal opened with data:', {
@@ -112,14 +103,15 @@ const CallDispositionModal: React.FC<CallDispositionModalProps> = ({ open, onClo
         ? new Date(callData.currentNextFollowUpAt).toISOString().slice(0, 16) 
         : '');
       
+      // Only use the actual captured duration from native dialer - never calculate from timestamps
       const resolvedDuration = typeof callData.duration === 'number'
         ? Math.max(0, Math.floor(callData.duration))
-        : computeFallbackDuration(callData.startTime, callData.completedAt);
+        : 0; // Default to 0 if not captured, don't calculate from timestamps
 
       if (resolvedDuration > 0) {
         console.log(`✅ Using captured duration: ${resolvedDuration} seconds`);
       } else {
-        console.log('ℹ️ Captured duration is 0 seconds (call not connected or no audio time recorded)');
+        console.log('ℹ️ Captured duration is 0 seconds (call not connected or duration not captured)');
       }
 
       setDuration(resolvedDuration);
@@ -137,19 +129,18 @@ const CallDispositionModal: React.FC<CallDispositionModalProps> = ({ open, onClo
         await callsService.updateDisposition(callData.callId, { disposition, notes });
       } else {
         // Create new call log with disposition and notes
-        const endTime = new Date();
-        const startTime = new Date(callData.startTime);
-        const computedDuration = duration > 0
-          ? duration
-          : Math.max(0, Math.floor((endTime.getTime() - startTime.getTime()) / 1000));
+        // Use completedAt from callData if available, otherwise calculate from startTime + duration
+        const endTime = callData.completedAt 
+          ? callData.completedAt 
+          : new Date(new Date(callData.startTime).getTime() + duration * 1000).toISOString();
 
         await callsService.logCall({
           leadId: callData.leadId,
           phoneNumber: callData.phoneNumber,
           callType: 'outgoing',
           startTime: callData.startTime,
-          endTime: endTime.toISOString(),
-          duration: computedDuration,
+          endTime: endTime,
+          duration: duration, // Use the exact captured duration, never recalculate
           disposition: disposition,
           notes: notes,
         });
