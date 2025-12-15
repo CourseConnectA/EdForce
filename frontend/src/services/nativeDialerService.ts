@@ -296,6 +296,9 @@ class NativeDialerService {
       return;
     }
 
+    // Set flag immediately to prevent race conditions with duplicate events
+    this.hasFinalDispatch = true;
+
     let phoneNumber: string | undefined;
     let leadId: string | undefined;
     let startTimeIso: string | undefined;
@@ -372,7 +375,7 @@ class NativeDialerService {
 
     console.log('✅ Dispatched call-completed event from source:', source, 'duration:', duration);
 
-    this.hasFinalDispatch = true;
+    // hasFinalDispatch already set at start of function to prevent race conditions
 
     if (this.fallbackTimer) {
       clearTimeout(this.fallbackTimer);
@@ -402,6 +405,9 @@ class NativeDialerService {
       if (this.hasFinalDispatch) {
         return;
       }
+
+      // Set flag immediately to prevent race conditions
+      this.hasFinalDispatch = true;
 
       console.warn('⚠️ No native call-finished event received within fallback window. Triggering manual disposition prompt.');
 
@@ -434,7 +440,6 @@ class NativeDialerService {
 
       window.dispatchEvent(new CustomEvent('call-completed', { detail }));
       console.log('✅ Dispatched fallback call-completed event (duration 0).');
-      this.hasFinalDispatch = true;
       sessionStorage.removeItem('pendingCall');
     }, delayMs);
   }
