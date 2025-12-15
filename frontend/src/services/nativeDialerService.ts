@@ -136,13 +136,34 @@ class NativeDialerService {
     this.scheduleFallbackPrompt(8000);
 
     // Use default dialer (tel:). Native listener will capture duration.
+    // Use dynamic anchor element approach to avoid WebView caching issues
     try {
-      console.log('🔁 Using tel: fallback');
-      window.location.href = `tel:${phoneNumber}`;
+      console.log('🔁 Using tel: via anchor element (avoids cache)');
+      const telUri = `tel:${phoneNumber}`;
+      const anchor = document.createElement('a');
+      anchor.href = telUri;
+      anchor.style.display = 'none';
+      // Add unique attribute to prevent any caching
+      anchor.setAttribute('data-call-timestamp', Date.now().toString());
+      document.body.appendChild(anchor);
+      anchor.click();
+      // Clean up after a short delay
+      setTimeout(() => {
+        if (anchor.parentNode) {
+          anchor.parentNode.removeChild(anchor);
+        }
+      }, 100);
       return true;
     } catch (err) {
-      console.error('❌ Fallback tel: launch failed', err);
-      return false;
+      console.error('❌ tel: launch failed', err);
+      // Fallback to location.href as last resort
+      try {
+        window.location.href = `tel:${phoneNumber}`;
+        return true;
+      } catch (e2) {
+        console.error('❌ Fallback location.href also failed', e2);
+        return false;
+      }
     }
   }
 

@@ -157,9 +157,20 @@ class CallsService {
       await nativeDialerService.initiateCall(phoneNumber);
       return;
     }
-    // Web/browser fallback
-    console.log('🌐 Using tel: URI fallback (web)');
-    window.location.href = `tel:${phoneNumber}`;
+    // Web/browser fallback - use anchor element to avoid caching
+    console.log('🌐 Using tel: URI fallback (web) via anchor element');
+    const telUri = `tel:${phoneNumber}`;
+    const anchor = document.createElement('a');
+    anchor.href = telUri;
+    anchor.style.display = 'none';
+    anchor.setAttribute('data-call-timestamp', Date.now().toString());
+    document.body.appendChild(anchor);
+    anchor.click();
+    setTimeout(() => {
+      if (anchor.parentNode) {
+        anchor.parentNode.removeChild(anchor);
+      }
+    }, 100);
   }
 
   // Check if running on Android

@@ -17,11 +17,27 @@ export interface LeadsState {
   lastQuery: LeadsQueryParams | null;
 }
 
+// Read saved pagination from localStorage synchronously to avoid flicker
+function getSavedPagination(): { page: number; limit: number } {
+  try {
+    const saved = JSON.parse(localStorage.getItem('leads.pagination') || 'null');
+    if (saved && typeof saved === 'object') {
+      return {
+        page: typeof saved.page === 'number' && saved.page >= 1 ? saved.page : 1,
+        limit: typeof saved.limit === 'number' && saved.limit >= 1 ? saved.limit : 10,
+      };
+    }
+  } catch {}
+  return { page: 1, limit: 10 };
+}
+
+const savedPagination = getSavedPagination();
+
 const initialState: LeadsState = {
   leads: [],
   total: 0,
-  page: 1,
-  limit: 10,
+  page: savedPagination.page,
+  limit: savedPagination.limit,
   loading: false,
   error: null,
   selectedLead: null,
@@ -136,8 +152,9 @@ const leadsSlice = createSlice({
         state.loading = false;
         state.leads = action.payload.response.data;
         state.total = action.payload.response.total;
-        state.page = action.payload.response.page;
-        state.limit = action.payload.response.limit;
+        // Don't overwrite page/limit from server response - they are controlled by frontend state
+        // state.page = action.payload.response.page;
+        // state.limit = action.payload.response.limit;
         state.lastQuery = action.payload.params || null;
       })
       .addCase(fetchLeads.rejected, (state, action) => {

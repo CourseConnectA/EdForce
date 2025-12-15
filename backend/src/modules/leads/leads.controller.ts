@@ -172,6 +172,16 @@ export class LeadsController {
     return this.leadsService.getHistory(id, req.user);
   }
 
+  @Patch('assign-bulk')
+  @ApiOperation({ summary: 'Bulk assign leads to a counselor (center manager only)' })
+  assignLeadsBulk(
+    @Body() body: { ids: string[]; assignedUserId: string },
+    @Req() req: any,
+  ) {
+    if (!body?.assignedUserId || !Array.isArray(body?.ids)) throw new BadRequestException('assignedUserId and ids[] are required');
+    return this.leadsService.assignLeadsBulk(body.ids, body.assignedUserId, req.user);
+  }
+
   @Patch(':id')
   @ApiOperation({ summary: 'Update a lead' })
   @ApiResponse({ status: 200, description: 'Lead updated successfully' })
@@ -195,16 +205,6 @@ export class LeadsController {
   ) {
     if (!body?.assignedUserId) throw new BadRequestException('assignedUserId is required');
     return this.leadsService.assignLead(id, body.assignedUserId, req.user);
-  }
-
-  @Patch('assign-bulk')
-  @ApiOperation({ summary: 'Bulk assign leads to a counselor (center manager only)' })
-  assignLeadsBulk(
-    @Body() body: { ids: string[]; assignedUserId: string },
-    @Req() req: any,
-  ) {
-    if (!body?.assignedUserId || !Array.isArray(body?.ids)) throw new BadRequestException('assignedUserId and ids[] are required');
-    return this.leadsService.assignLeadsBulk(body.ids, body.assignedUserId, req.user);
   }
 
   @Patch(':id/convert')
