@@ -81,31 +81,6 @@ import webSocketService from '@/services/webSocketService';
 import CallDispositionModal from '@/components/common/CallDispositionModal';
 import { Capacitor } from '@capacitor/core';
 
-const mapCallLogTypeToCallType = (callLogType?: number, duration?: number): 'outgoing' | 'incoming' | 'missed' => {
-  if (typeof callLogType === 'number') {
-    switch (callLogType) {
-      case 1:
-        return 'incoming';
-      case 2:
-        return duration && duration > 0 ? 'outgoing' : 'missed';
-      case 3:
-      case 5:
-      case 7:
-        return 'missed';
-      case 4:
-      case 6:
-      case 8:
-        return duration && duration > 0 ? 'incoming' : 'missed';
-      default:
-        break;
-    }
-  }
-  if (duration && duration > 0) {
-    return 'outgoing';
-  }
-  return 'missed';
-};
-
 interface LeadsDataTableProps {
   onCreateLead?: () => void;
 }
@@ -136,50 +111,6 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
       return platform !== 'web';
     } catch {
       return false;
-    }
-  }, []);
-
-  const autoPersistCallLog = useCallback(async (detail: any) => {
-    if (!detail || detail.source !== 'calllog') {
-      return null;
-    }
-
-    const leadId = typeof detail.leadId === 'string' ? detail.leadId : null;
-    const phoneNumber = typeof detail.phoneNumber === 'string' ? detail.phoneNumber : null;
-    if (!leadId || !phoneNumber) {
-      return null;
-    }
-
-    const duration = typeof detail.duration === 'number' && Number.isFinite(detail.duration)
-      ? Math.max(0, Math.floor(detail.duration))
-      : 0;
-
-    const startTime = typeof detail.startTime === 'string' ? detail.startTime : new Date().toISOString();
-    const completedAt = typeof detail.completedAt === 'string' ? detail.completedAt : new Date().toISOString();
-
-    const callType = mapCallLogTypeToCallType(
-      typeof detail.callLogType === 'number' ? detail.callLogType : undefined,
-      duration,
-    );
-
-    const deviceCallLogId = detail.callLogId !== undefined && detail.callLogId !== null
-      ? String(detail.callLogId)
-      : undefined;
-
-    try {
-      const saved = await callsService.logCall({
-        leadId,
-        phoneNumber,
-        callType,
-        startTime,
-        endTime: completedAt,
-        duration,
-        deviceCallLogId,
-      });
-      return saved;
-    } catch (err) {
-      console.error('Failed to auto-log call:', err);
-      return null;
     }
   }, []);
 
