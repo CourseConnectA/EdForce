@@ -12,8 +12,11 @@ import {
   MenuItem,
   Typography,
   Box,
+  Divider,
 } from '@mui/material';
 import callsService from '@/services/callsService';
+import leadsService from '@/services/leadsService';
+import { GLOBAL_LEAD_STATUSES, LEAD_SUB_STATUS_BY_STATUS, getFollowUpMaxDate } from '@/constants/leadStatus';
 
 interface CallDispositionModalProps {
   open: boolean;
@@ -26,6 +29,12 @@ interface CallDispositionModalProps {
     duration?: number; // Duration from CallLog in seconds
     completedAt?: string; // When the call finished, if known
     source?: string;
+    // Current lead data for pre-filling
+    currentLeadStatus?: string;
+    currentLeadSubStatus?: string;
+    currentLeadDescription?: string;
+    currentComment?: string;
+    currentNextFollowUpAt?: string;
   } | null;
   onSaved?: () => void;
 }
@@ -46,6 +55,22 @@ const CallDispositionModal: React.FC<CallDispositionModalProps> = ({ open, onClo
   const [notes, setNotes] = useState('');
   const [duration, setDuration] = useState(0);
   const [saving, setSaving] = useState(false);
+
+  // Lead update fields
+  const [leadStatus, setLeadStatus] = useState('');
+  const [leadSubStatus, setLeadSubStatus] = useState('');
+  const [leadDescription, setLeadDescription] = useState('');
+  const [comment, setComment] = useState('');
+  const [nextFollowUpAt, setNextFollowUpAt] = useState('');
+
+  // Get sub-status options based on selected status
+  const subStatusOptions = leadStatus ? (LEAD_SUB_STATUS_BY_STATUS[leadStatus] || []) : [];
+
+  // Get max follow-up date based on status
+  const followUpMax = getFollowUpMaxDate(leadStatus);
+  const followUpMaxStr = followUpMax
+    ? `${followUpMax.getFullYear()}-${String(followUpMax.getMonth() + 1).padStart(2, '0')}-${String(followUpMax.getDate()).padStart(2, '0')}T${String(followUpMax.getHours()).padStart(2, '0')}:${String(followUpMax.getMinutes()).padStart(2, '0')}`
+    : undefined;
 
   const formatDuration = (seconds: number) => {
     const hrs = Math.floor(seconds / 3600);
@@ -78,6 +103,15 @@ const CallDispositionModal: React.FC<CallDispositionModalProps> = ({ open, onClo
       setDisposition('');
       setNotes('');
       
+      // Pre-fill lead fields from current lead data
+      setLeadStatus(callData.currentLeadStatus || '');
+      setLeadSubStatus(callData.currentLeadSubStatus || '');
+      setLeadDescription(callData.currentLeadDescription || '');
+      setComment(callData.currentComment || '');
+      setNextFollowUpAt(callData.currentNextFollowUpAt 
+        ? new Date(callData.currentNextFollowUpAt).toISOString().slice(0, 16) 
+        : '');
+      
       const resolvedDuration = typeof callData.duration === 'number'
         ? Math.max(0, Math.floor(callData.duration))
         : computeFallbackDuration(callData.startTime, callData.completedAt);
@@ -97,6 +131,7 @@ const CallDispositionModal: React.FC<CallDispositionModalProps> = ({ open, onClo
 
     setSaving(true);
     try {
+      // 1. Save call disposition
       if (callData.callId) {
         // Update existing call log
         await callsService.updateDisposition(callData.callId, { disposition, notes });
@@ -118,6 +153,31 @@ const CallDispositionModal: React.FC<CallDispositionModalProps> = ({ open, onClo
           disposition: disposition,
           notes: notes,
         });
+      }
+
+      // 2. Update lead fields if any were changed
+      const leadUpdatePayload: Record<string, any> = {};
+      if (leadStatus) leadUpdatePayload.leadStatus = leadStatus;
+      if (leadSubStatus) leadUpdatePayload.leadSubStatus = leadSubStatus;
+      if (leadDescription !== (callData.currentLeadDescription || '')) {
+        leadUpdatePayload.leadDescription = leadDescription;
+      }
+      if (comment !== (callData.currentComment || '')) {
+        leadUpdatePayload.comment = comment;
+      }
+      if (nextFollowUpAt) {
+        // Clamp within allowed window
+        let nextAt = new Date(nextFollowUpAt);
+        const now = new Date();
+        if (nextAt < now) nextAt = now;
+        const max = getFollowUpMaxDate(leadStatus);
+        if (max && nextAt > max) nextAt = max;
+        leadUpdatePayload.nextFollowUpAt = nextAt.toISOString();
+      }
+
+      if (Object.keys(leadUpdatePayload).length > 0) {
+        await leadsService.updateLead(callData.leadId, leadUpdatePayload as any);
+        console.log('✅ Lead updated with:', leadUpdatePayload);
       }
 
       onSaved?.();
@@ -173,14 +233,87 @@ const CallDispositionModal: React.FC<CallDispositionModalProps> = ({ open, onClo
           </FormControl>
 
           <TextField
-            label="Notes"
+            label="Call Notes"
             multiline
-            rows={4}
+            rows={2}
             fullWidth
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             margin="normal"
             placeholder="Add any notes about the call..."
+          />
+
+          <Divider sx={{ my: 2 }} />
+          <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+            Update Lead Information
+          </Typography>
+
+          <FormControl fullWidth margin="normal">
+            <InputLabel>Lead Status</InputLabel>
+            <Select
+              value={leadStatus}
+              onChange={(e) => {
+                setLeadStatus(e.target.value);
+                setLeadSubStatus(''); // Reset sub-status when status changes
+              }}
+              label="Lead Status"
+            >
+              {GLOBAL_LEAD_STATUSES.map((s) => (
+                <MenuItem key={s} value={s}>{s}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          {subStatusOptions.length > 0 && (
+            <FormControl fullWidth margin="normal">
+              <InputLabel>Lead Sub Status</InputLabel>
+              <Select
+                value={leadSubStatus}
+                onChange={(e) => setLeadSubStatus(e.target.value)}
+                label="Lead Sub Status"
+              >
+                {subStatusOptions.map((s) => (
+                  <MenuItem key={s} value={s}>{s}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          )}
+
+          <TextField
+            label="Lead Description"
+            multiline
+            rows={2}
+            fullWidth
+            value={leadDescription}
+            onChange={(e) => setLeadDescription(e.target.value)}
+            margin="normal"
+            placeholder="Description about the lead..."
+          />
+
+          <TextField
+            label="Comments"
+            multiline
+            rows={2}
+            fullWidth
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            margin="normal"
+            placeholder="Add comments..."
+          />
+
+          <TextField
+            label="Next Follow Up"
+            type="datetime-local"
+            fullWidth
+            value={nextFollowUpAt}
+            onChange={(e) => setNextFollowUpAt(e.target.value)}
+            margin="normal"
+            InputLabelProps={{ shrink: true }}
+            inputProps={{
+              min: new Date().toISOString().slice(0, 16),
+              max: followUpMaxStr,
+            }}
+            helperText={followUpMax ? `Max: ${followUpMax.toLocaleDateString()}` : undefined}
           />
         </Box>
       </DialogContent>

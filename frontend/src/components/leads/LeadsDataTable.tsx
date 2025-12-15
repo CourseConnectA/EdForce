@@ -257,6 +257,12 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
     duration?: number; // Duration from CallLog in seconds
     completedAt?: string;
     source?: string;
+    // Current lead data for pre-filling
+    currentLeadStatus?: string;
+    currentLeadSubStatus?: string;
+    currentLeadDescription?: string;
+    currentComment?: string;
+    currentNextFollowUpAt?: string;
   } | null>(null);
 
   // WhatsApp chooser dialog state
@@ -326,6 +332,9 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
         }
       }
 
+      // Find the lead to get current status info
+      const lead = leads.find(l => l.id === leadId);
+
       setCallDispositionData({
         phoneNumber,
         leadId,
@@ -334,6 +343,11 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
         completedAt,
         source,
         callId,
+        currentLeadStatus: lead?.leadStatus,
+        currentLeadSubStatus: lead?.leadSubStatus,
+        currentLeadDescription: lead?.leadDescription,
+        currentComment: lead?.comment,
+        currentNextFollowUpAt: lead?.nextFollowUpAt,
       });
       setCallDispositionOpen(true);
     };
@@ -347,7 +361,7 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
     return () => {
       window.removeEventListener('call-completed' as any, handleCallCompleted as any);
     };
-  }, [autoPersistCallLog]);
+  }, [autoPersistCallLog, leads]);
 
   // Debounce search input updates -> searchTerm
   useEffect(() => {
@@ -2694,8 +2708,24 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
         }}
         callData={callDispositionData}
         onSaved={() => {
-          // Optionally refresh call logs or show success message
-          console.log('Call disposition saved');
+          // Refresh leads list to show updated status
+          console.log('Call disposition saved, refreshing leads...');
+          dispatch(fetchLeads({
+            page,
+            limit,
+            search: searchTerm || undefined,
+            leadStatus: statusFilter || undefined,
+            assignedToId: role === 'center-manager' && counselorFilter ? counselorFilter : undefined,
+            isImportant: importantOnly ? true : undefined,
+            leadSource: leadSourceFilter || undefined,
+            industry: industryFilter || undefined,
+            locationCity: cityFilter || undefined,
+            locationState: stateFilter || undefined,
+            createdAfter: createdAfter || undefined,
+            createdBefore: createdBefore || undefined,
+            sortBy: sortModel[0]?.field || undefined,
+            sortOrder: sortModel[0]?.sort || undefined,
+          }));
         }}
       />
     </Box>
