@@ -19,6 +19,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.List;
+import com.edforce.app.plugins.DialerPlugin;
 
 public class MainActivity extends BridgeActivity {
     private static final String TAG = "NativeDialerBridge";
@@ -35,8 +36,9 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // Register our custom plugin
+        // Register our custom plugins
         registerPlugin(CallLogSyncPlugin.class);
+        registerPlugin(DialerPlugin.class);
 
         telephonyManager = (TelephonyManager) getSystemService(TELEPHONY_SERVICE);
         phoneStateListener = new PhoneStateListener() {

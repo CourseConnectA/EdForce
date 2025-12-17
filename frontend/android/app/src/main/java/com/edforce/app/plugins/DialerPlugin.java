@@ -111,7 +111,10 @@ public class DialerPlugin extends Plugin {
 
             Intent intent = new Intent(Intent.ACTION_CALL);
             intent.setData(Uri.parse("tel:" + phoneNumber));
-            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            // Use flags to prevent caching on Xiaomi and other custom Android UIs
+            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            // Add unique extra to ensure intent is treated as new
+            intent.putExtra("call_timestamp", System.currentTimeMillis());
             getContext().startActivity(intent);
 
             Log.d(TAG, "Call initiated successfully");
@@ -124,6 +127,44 @@ public class DialerPlugin extends Plugin {
         } catch (Exception e) {
             Log.e(TAG, "Error initiating call: " + e.getMessage());
             call.reject("Failed to initiate call: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void openDialer(PluginCall call) {
+        String phoneNumber = call.getString("phoneNumber");
+
+        if (phoneNumber == null || phoneNumber.isEmpty()) {
+            call.reject("Phone number is required");
+            return;
+        }
+
+        Log.d(TAG, "=== OPENING DIALER ===");
+        Log.d(TAG, "Phone Number: " + phoneNumber);
+
+        try {
+            callMonitor.setLastCalledNumber(phoneNumber);
+
+            // Use ACTION_DIAL instead of ACTION_CALL - this opens dialer with number
+            // but doesn't auto-call, avoiding Xiaomi caching issues
+            Intent intent = new Intent(Intent.ACTION_DIAL);
+            intent.setData(Uri.parse("tel:" + phoneNumber));
+            // Use flags to prevent caching on Xiaomi and other custom Android UIs
+            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_NO_HISTORY);
+            // Add unique extra to ensure intent is treated as new
+            intent.putExtra("dial_timestamp", System.currentTimeMillis());
+            getContext().startActivity(intent);
+
+            Log.d(TAG, "Dialer opened successfully");
+
+            JSObject result = new JSObject();
+            result.put("success", true);
+            result.put("phoneNumber", phoneNumber);
+            call.resolve(result);
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error opening dialer: " + e.getMessage());
+            call.reject("Failed to open dialer: " + e.getMessage());
         }
     }
 

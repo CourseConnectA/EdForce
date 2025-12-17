@@ -1,5 +1,6 @@
 import { Capacitor } from '@capacitor/core';
 import callLoggingService from './callLoggingService';
+import DialerPlugin from '@/plugins/DialerPlugin';
 
 class NativeDialerService {
   // No plugin usage; native PhoneStateListener in MainActivity dispatches events
@@ -10,6 +11,7 @@ class NativeDialerService {
   private fallbackTimer: NodeJS.Timeout | null = null;
   private visibilityHandlerRegistered = false;
   private nativeEventHandler: ((e: any) => void) | null = null;
+  private useNativePlugin = false; // Will be set to true if native plugin is available
 
   async start() {
     if (this.isRunning) {
@@ -23,6 +25,16 @@ class NativeDialerService {
     if (!Capacitor.isNativePlatform()) {
       console.log('⚠️ Not running on native platform');
       return;
+    }
+
+    // Check if native Dialer plugin is available
+    try {
+      const permResult = await DialerPlugin.checkPermission();
+      this.useNativePlugin = true;
+      console.log('📱 Native Dialer plugin available, permissions:', permResult);
+    } catch {
+      this.useNativePlugin = false;
+      console.log('📱 Native Dialer plugin not available, will use tel: URI');
     }
 
     console.log('📱 Platform:', Capacitor.getPlatform());
@@ -135,7 +147,21 @@ class NativeDialerService {
     // Reduced fallback time from 20s to 8s for faster missed call detection
     this.scheduleFallbackPrompt(8000);
 
-    // Use default dialer (tel:). Native listener will capture duration.
+    // Try native plugin first (better handling of Xiaomi caching issues)
+    if (this.useNativePlugin && Capacitor.isNativePlatform()) {
+      try {
+        console.log('🔌 Using native Dialer plugin');
+        const result = await DialerPlugin.openDialer({ phoneNumber });
+        if (result.success) {
+          console.log('✅ Native dialer opened successfully');
+          return true;
+        }
+      } catch (err) {
+        console.warn('⚠️ Native Dialer plugin failed, falling back to tel: URI', err);
+      }
+    }
+
+    // Fallback: Use default dialer (tel:). Native listener will capture duration.
     // Use dynamic anchor element approach to avoid WebView caching issues
     try {
       console.log('🔁 Using tel: via anchor element (avoids cache)');
@@ -145,6 +171,7 @@ class NativeDialerService {
       anchor.style.display = 'none';
       // Add unique attribute to prevent any caching
       anchor.setAttribute('data-call-timestamp', Date.now().toString());
+      anchor.setAttribute('data-phone-number', phoneNumber);
       document.body.appendChild(anchor);
       anchor.click();
       // Clean up after a short delay

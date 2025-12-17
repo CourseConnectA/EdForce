@@ -719,10 +719,31 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
     
     if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
       // On Android, use intent URLs to open specific app
+      // Use dynamic anchor element approach to avoid WebView caching issues
       const intentUrl = type === 'business'
         ? `intent://send?phone=${whatsappNumber}#Intent;scheme=whatsapp;package=com.whatsapp.w4b;end`
         : `intent://send?phone=${whatsappNumber}#Intent;scheme=whatsapp;package=com.whatsapp;end`;
-      window.location.href = intentUrl;
+      
+      try {
+        const anchor = document.createElement('a');
+        anchor.href = intentUrl;
+        anchor.style.display = 'none';
+        // Add unique attribute to prevent any caching
+        anchor.setAttribute('data-whatsapp-timestamp', Date.now().toString());
+        anchor.setAttribute('data-whatsapp-number', whatsappNumber);
+        document.body.appendChild(anchor);
+        anchor.click();
+        // Clean up after a short delay
+        setTimeout(() => {
+          if (anchor.parentNode) {
+            anchor.parentNode.removeChild(anchor);
+          }
+        }, 100);
+      } catch (err) {
+        console.error('Failed to open WhatsApp via intent:', err);
+        // Fallback to location.href
+        window.location.href = intentUrl;
+      }
     } else {
       // On web/iOS, use wa.me (will open default WhatsApp)
       // For business on web, there's no reliable way to force business app
