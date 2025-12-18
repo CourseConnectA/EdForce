@@ -1,18 +1,13 @@
 package com.edforce.app.plugins;
 
-import android.app.Dialog;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
-import android.graphics.Color;
-import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.util.Log;
-import android.view.Gravity;
+import android.view.LayoutInflater;
 import android.view.View;
-import android.view.Window;
-import android.view.WindowManager;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -22,6 +17,7 @@ import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import com.google.android.material.bottomsheet.BottomSheetDialog;
 
 @CapacitorPlugin(name = "WhatsAppChooser")
 public class WhatsAppChooserPlugin extends Plugin {
@@ -31,6 +27,7 @@ public class WhatsAppChooserPlugin extends Plugin {
 
     @PluginMethod
     public void openChooser(PluginCall call) {
+        Log.d(TAG, "openChooser invoked");
         String phoneNumber = call.getString("phoneNumber");
         
         if (phoneNumber == null || phoneNumber.isEmpty()) {
@@ -76,8 +73,8 @@ public class WhatsAppChooserPlugin extends Plugin {
                 }
 
                 // Both apps installed - show custom bottom sheet chooser
-                Log.d(TAG, "Decision: BOTH apps installed -> showing chooser dialog");
-                showCustomChooserDialog(cleanNumber, pm);
+                Log.d(TAG, "Decision: BOTH apps installed -> showing bottom sheet chooser");
+                showBottomSheetChooser(cleanNumber, pm);
                 call.resolve();
 
             } catch (Exception e) {
@@ -86,130 +83,105 @@ public class WhatsAppChooserPlugin extends Plugin {
             }
         });
     }
+
+    @Override
+    public void load() {
+        super.load();
+        Log.d(TAG, "WhatsApp plugin loaded and registered");
+    }
+
+    @PluginMethod
+    public void ping(PluginCall call) {
+        Log.d(TAG, "ping invoked");
+        call.resolve();
+    }
     
-    private void showCustomChooserDialog(String phoneNumber, PackageManager pm) {
-        Log.d(TAG, "showCustomChooserDialog called");
-        Dialog dialog = new Dialog(getActivity());
-        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+    private void showBottomSheetChooser(String phoneNumber, PackageManager pm) {
+        Log.d(TAG, "showBottomSheetChooser called");
         
-        // Create main container
-        LinearLayout container = new LinearLayout(getActivity());
-        container.setOrientation(LinearLayout.VERTICAL);
-        container.setBackgroundColor(Color.WHITE);
-        int padding = dpToPx(20);
-        container.setPadding(padding, padding, padding, padding);
+        BottomSheetDialog bottomSheetDialog = new BottomSheetDialog(getActivity());
+        
+        // Create layout programmatically
+        LinearLayout layout = new LinearLayout(getActivity());
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(0, 48, 0, 48);
         
         // Title
         TextView title = new TextView(getActivity());
         title.setText("Open with");
         title.setTextSize(18);
-        title.setTextColor(Color.parseColor("#333333"));
-        title.setPadding(0, 0, 0, dpToPx(16));
-        container.addView(title);
+        title.setPadding(48, 24, 48, 24);
+        layout.addView(title);
         
         // WhatsApp option
-        LinearLayout waOption = createAppOption(
-            "WhatsApp", 
-            WHATSAPP_PACKAGE, 
-            pm,
-            () -> {
-                dialog.dismiss();
-                openWhatsAppIntent(phoneNumber, WHATSAPP_PACKAGE);
-            }
-        );
-        container.addView(waOption);
-        
-        // Divider
-        View divider = new View(getActivity());
-        divider.setBackgroundColor(Color.parseColor("#E0E0E0"));
-        LinearLayout.LayoutParams dividerParams = new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dpToPx(1));
-        dividerParams.setMargins(0, dpToPx(8), 0, dpToPx(8));
-        divider.setLayoutParams(dividerParams);
-        container.addView(divider);
+        LinearLayout waOption = createAppOption(pm, WHATSAPP_PACKAGE, "WhatsApp", () -> {
+            bottomSheetDialog.dismiss();
+            openWhatsAppIntent(phoneNumber, WHATSAPP_PACKAGE);
+        });
+        if (waOption != null) {
+            layout.addView(waOption);
+        }
         
         // WhatsApp Business option
-        LinearLayout wabOption = createAppOption(
-            "WhatsApp Business", 
-            WHATSAPP_BUSINESS_PACKAGE, 
-            pm,
-            () -> {
-                dialog.dismiss();
-                openWhatsAppIntent(phoneNumber, WHATSAPP_BUSINESS_PACKAGE);
-            }
-        );
-        container.addView(wabOption);
-        
-        // Cancel button
-        TextView cancel = new TextView(getActivity());
-        cancel.setText("Cancel");
-        cancel.setTextSize(16);
-        cancel.setTextColor(Color.parseColor("#666666"));
-        cancel.setPadding(0, dpToPx(20), 0, dpToPx(4));
-        cancel.setGravity(Gravity.CENTER);
-        cancel.setOnClickListener(v -> dialog.dismiss());
-        container.addView(cancel);
-        
-        dialog.setContentView(container);
-        
-        // Style as bottom sheet
-        Window window = dialog.getWindow();
-        if (window != null) {
-            window.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT);
-            window.setGravity(Gravity.BOTTOM);
-            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-            
-            // Add rounded corners at top
-            container.setBackgroundResource(android.R.drawable.dialog_holo_light_frame);
-            container.setBackgroundColor(Color.WHITE);
+        LinearLayout wabOption = createAppOption(pm, WHATSAPP_BUSINESS_PACKAGE, "WhatsApp Business", () -> {
+            bottomSheetDialog.dismiss();
+            openWhatsAppIntent(phoneNumber, WHATSAPP_BUSINESS_PACKAGE);
+        });
+        if (wabOption != null) {
+            layout.addView(wabOption);
         }
         
-        dialog.setCancelable(true);
-        dialog.show();
-        Log.d(TAG, "Dialog shown successfully");
+        bottomSheetDialog.setContentView(layout);
+        bottomSheetDialog.show();
+        Log.d(TAG, "Bottom sheet dialog shown");
     }
     
-    private LinearLayout createAppOption(String appName, String packageName, PackageManager pm, Runnable onClick) {
-        LinearLayout option = new LinearLayout(getActivity());
-        option.setOrientation(LinearLayout.HORIZONTAL);
-        option.setGravity(Gravity.CENTER_VERTICAL);
-        option.setPadding(dpToPx(8), dpToPx(12), dpToPx(8), dpToPx(12));
-        option.setClickable(true);
-        option.setFocusable(true);
-        
-        // Set ripple effect background
-        int[] attrs = new int[]{android.R.attr.selectableItemBackground};
-        android.content.res.TypedArray ta = getActivity().obtainStyledAttributes(attrs);
-        Drawable ripple = ta.getDrawable(0);
-        ta.recycle();
-        option.setBackground(ripple);
-        
-        // App icon
-        ImageView icon = new ImageView(getActivity());
-        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dpToPx(48), dpToPx(48));
-        iconParams.setMargins(0, 0, dpToPx(16), 0);
-        icon.setLayoutParams(iconParams);
-        
+    private LinearLayout createAppOption(PackageManager pm, String packageName, String appName, Runnable onClick) {
         try {
             ApplicationInfo appInfo = pm.getApplicationInfo(packageName, 0);
-            Drawable appIcon = pm.getApplicationIcon(appInfo);
-            icon.setImageDrawable(appIcon);
+            Drawable icon = pm.getApplicationIcon(appInfo);
+            
+            LinearLayout optionLayout = new LinearLayout(getActivity());
+            optionLayout.setOrientation(LinearLayout.HORIZONTAL);
+            optionLayout.setPadding(48, 32, 48, 32);
+            optionLayout.setClickable(true);
+            optionLayout.setFocusable(true);
+            
+            // Set ripple effect background
+            int[] attrs = new int[]{android.R.attr.selectableItemBackground};
+            android.content.res.TypedArray ta = getActivity().obtainStyledAttributes(attrs);
+            Drawable ripple = ta.getDrawable(0);
+            ta.recycle();
+            optionLayout.setBackground(ripple);
+            
+            // App icon
+            ImageView iconView = new ImageView(getActivity());
+            int iconSize = (int) (48 * getActivity().getResources().getDisplayMetrics().density);
+            LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(iconSize, iconSize);
+            iconView.setLayoutParams(iconParams);
+            iconView.setImageDrawable(icon);
+            optionLayout.addView(iconView);
+            
+            // App name
+            TextView nameView = new TextView(getActivity());
+            nameView.setText(appName);
+            nameView.setTextSize(16);
+            LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, 
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            );
+            textParams.setMargins(32, 0, 0, 0);
+            textParams.gravity = android.view.Gravity.CENTER_VERTICAL;
+            nameView.setLayoutParams(textParams);
+            optionLayout.addView(nameView);
+            
+            optionLayout.setOnClickListener(v -> onClick.run());
+            
+            return optionLayout;
         } catch (PackageManager.NameNotFoundException e) {
-            // Use placeholder
-            icon.setBackgroundColor(Color.parseColor("#25D366"));
+            Log.w(TAG, "Package not found: " + packageName);
+            return null;
         }
-        option.addView(icon);
-        
-        // App name
-        TextView name = new TextView(getActivity());
-        name.setText(appName);
-        name.setTextSize(16);
-        name.setTextColor(Color.parseColor("#333333"));
-        option.addView(name);
-        
-        option.setOnClickListener(v -> onClick.run());
-        
-        return option;
     }
     
     private void openWhatsAppIntent(String phoneNumber, String packageName) {
@@ -218,11 +190,6 @@ public class WhatsAppChooserPlugin extends Plugin {
         intent.setData(Uri.parse("https://api.whatsapp.com/send?phone=" + phoneNumber));
         intent.setPackage(packageName);
         getActivity().startActivity(intent);
-    }
-    
-    private int dpToPx(int dp) {
-        float density = getActivity().getResources().getDisplayMetrics().density;
-        return Math.round(dp * density);
     }
 
     @PluginMethod

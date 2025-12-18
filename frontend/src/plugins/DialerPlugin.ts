@@ -34,6 +34,11 @@ export interface DialerPluginInterface {
    * Get the duration of the last call
    */
   getLastCallDuration(): Promise<{ duration: number; number: string; isActive: boolean }>;
+
+  /**
+   * Open WhatsApp or WhatsApp Business for a given number
+   */
+  openWhatsApp(options: { phoneNumber: string; type?: 'normal' | 'business' }): Promise<DialerResult>;
 }
 
 const DialerPlugin = registerPlugin<DialerPluginInterface>('Dialer');

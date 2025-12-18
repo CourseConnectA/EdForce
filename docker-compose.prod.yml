@@ -83,7 +83,7 @@ services:
       - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
       - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-24h}
       - JWT_REFRESH_EXPIRES_IN=${JWT_REFRESH_EXPIRES_IN:-7d}
-      - CORS_ORIGIN=https://edforce.live,https://www.edforce.live,https://api.edforce.live
+      - CORS_ORIGIN=https://edforce.live,https://www.edforce.live,https://api.edforce.live,capacitor://localhost,http://localhost
       - WHATSAPP_TOKEN=${WHATSAPP_TOKEN:-}
       - WHATSAPP_PHONE_NUMBER_ID=${WHATSAPP_PHONE_NUMBER_ID:-}
       - WHATSAPP_VERIFY_TOKEN=${WHATSAPP_VERIFY_TOKEN:-}

@@ -87,26 +87,25 @@ export class CallsService {
     // If no leadId provided (incoming call), try to find lead by phone number
     if (!leadId && dto.phoneNumber) {
       const normalizedPhone = this.normalizePhoneNumber(dto.phoneNumber);
+      const last10 = normalizedPhone.slice(-10);
       console.log(`Looking for lead with phone: ${dto.phoneNumber} -> normalized: ${normalizedPhone}`);
-      
-      // Search for lead by any phone field using multiple matching strategies
-      // Strategy 1: Exact match on last 10 digits
-      // Strategy 2: The stored number ends with the normalized digits
-      // Strategy 3: The normalized phone ends with stored number (for numbers stored without country code)
+
+      // Robust normalization in SQL using Postgres REGEXP_REPLACE to strip all non-digits
+      // Matches any of the stored numbers when normalized equals or ends-with last 10 digits
       const qb = this.leadRepo.createQueryBuilder('lead')
         .where('lead.deleted = :del', { del: false })
         .andWhere(
           `(
-            REPLACE(REPLACE(REPLACE(lead.mobile_number, ' ', ''), '-', ''), '+', '') LIKE :phoneSuffix
-            OR REPLACE(REPLACE(REPLACE(lead.alternate_number, ' ', ''), '-', ''), '+', '') LIKE :phoneSuffix
-            OR REPLACE(REPLACE(REPLACE(lead.whatsapp_number, ' ', ''), '-', ''), '+', '') LIKE :phoneSuffix
-            OR lead.mobile_number LIKE :phonePattern
-            OR lead.alternate_number LIKE :phonePattern
-            OR lead.whatsapp_number LIKE :phonePattern
+            REGEXP_REPLACE(COALESCE(lead.mobile_number, ''), '[^0-9]', '', 'g') LIKE :fullSuffix
+            OR REGEXP_REPLACE(COALESCE(lead.alternate_number, ''), '[^0-9]', '', 'g') LIKE :fullSuffix
+            OR REGEXP_REPLACE(COALESCE(lead.whatsapp_number, ''), '[^0-9]', '', 'g') LIKE :fullSuffix
+            OR REGEXP_REPLACE(COALESCE(lead.mobile_number, ''), '[^0-9]', '', 'g') LIKE :last10Suffix
+            OR REGEXP_REPLACE(COALESCE(lead.alternate_number, ''), '[^0-9]', '', 'g') LIKE :last10Suffix
+            OR REGEXP_REPLACE(COALESCE(lead.whatsapp_number, ''), '[^0-9]', '', 'g') LIKE :last10Suffix
           )`,
-          { 
-            phoneSuffix: `%${normalizedPhone}`,  // Ends with normalized (e.g., stored "919876543210" ends with "9876543210")
-            phonePattern: `%${normalizedPhone.slice(-10)}%`  // Contains last 10 digits
+          {
+            fullSuffix: `%${normalizedPhone}`,
+            last10Suffix: `%${last10}`,
           }
         )
         .orderBy('lead.date_modified', 'DESC')

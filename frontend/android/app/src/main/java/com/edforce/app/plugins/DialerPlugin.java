@@ -89,6 +89,147 @@ public class DialerPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void openWhatsApp(PluginCall call) {
+        String phoneNumber = call.getString("phoneNumber", "");
+        String type = call.getString("type", "normal");
+
+        if (phoneNumber == null || phoneNumber.isEmpty()) {
+            JSObject res = new JSObject();
+            res.put("success", false);
+            res.put("error", "Phone number is required");
+            call.resolve(res);
+            return;
+        }
+
+        String clean = phoneNumber.replaceAll("[^0-9]", "");
+        // If 10-digit local number, default to India country code 91 (matches frontend behavior)
+        if (clean.length() == 10 && !clean.startsWith("91")) {
+            clean = "91" + clean;
+        }
+
+        String pkg = "business".equals(type) ? "com.whatsapp.w4b" : "com.whatsapp";
+
+        Log.d(TAG, "openWhatsApp: target pkg=" + pkg + ", number=" + clean);
+
+        try {
+            // 1) Verify package is installed
+            PackageManager pm = getContext().getPackageManager();
+            try {
+                pm.getApplicationInfo(pkg, 0);
+                Log.d(TAG, "Package installed: " + pkg);
+            } catch (Exception notInstalled) {
+                Log.w(TAG, "Package NOT installed: " + pkg + ", falling back to wa.me");
+                try {
+                    Uri wa = Uri.parse("https://wa.me/" + clean);
+                    Intent intent = new Intent(Intent.ACTION_VIEW, wa);
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    getActivity().startActivity(intent);
+                } catch (Exception e0) {
+                    Log.e(TAG, "wa.me fallback failed when package missing: " + e0.getMessage());
+                }
+                JSObject res = new JSObject();
+                res.put("success", false);
+                res.put("error", "Package not installed");
+                call.resolve(res);
+                return;
+            }
+
+            // 2) Try ACTION_SENDTO with smsto: (opens chat composer)
+            try {
+                Uri smsto = Uri.parse("smsto:" + clean);
+                Intent intent = new Intent(Intent.ACTION_SENDTO, smsto);
+                intent.setPackage(pkg);
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                getActivity().startActivity(intent);
+                Log.d(TAG, "Opened via ACTION_SENDTO smsto:");
+                JSObject res = new JSObject();
+                res.put("success", true);
+                res.put("phoneNumber", clean);
+                call.resolve(res);
+                return;
+            } catch (Exception e0) {
+                Log.w(TAG, "ACTION_SENDTO smsto failed: " + e0.getMessage());
+            }
+
+            // 3) Try whatsapp scheme next
+            try {
+                Uri scheme = Uri.parse("whatsapp://send?phone=" + clean);
+                Intent intent = new Intent(Intent.ACTION_VIEW, scheme);
+                intent.setPackage(pkg);
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                getActivity().startActivity(intent);
+                Log.d(TAG, "Opened via whatsapp:// scheme");
+                JSObject res = new JSObject();
+                res.put("success", true);
+                res.put("phoneNumber", clean);
+                call.resolve(res);
+                return;
+            } catch (Exception e1) {
+                Log.w(TAG, "whatsapp:// scheme failed: " + e1.getMessage());
+            }
+
+            // 4) Fallback to api.whatsapp.com URL with package set
+            try {
+                Uri api = Uri.parse("https://api.whatsapp.com/send?phone=" + clean);
+                Intent intent = new Intent(Intent.ACTION_VIEW, api);
+                intent.setPackage(pkg);
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                getActivity().startActivity(intent);
+                Log.d(TAG, "Opened via api.whatsapp.com URL");
+                JSObject res = new JSObject();
+                res.put("success", true);
+                res.put("phoneNumber", clean);
+                call.resolve(res);
+                return;
+            } catch (Exception e2) {
+                Log.w(TAG, "api.whatsapp.com URL failed: " + e2.getMessage());
+            }
+
+            // 5) Try launching app as a last native attempt
+            try {
+                Intent launch = pm.getLaunchIntentForPackage(pkg);
+                if (launch != null) {
+                    launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    getActivity().startActivity(launch);
+                    Log.w(TAG, "Launched app via getLaunchIntentForPackage (no deep link)");
+                    JSObject res = new JSObject();
+                    res.put("success", true);
+                    res.put("phoneNumber", clean);
+                    call.resolve(res);
+                    return;
+                } else {
+                    Log.w(TAG, "getLaunchIntentForPackage returned null");
+                }
+            } catch (Exception eL) {
+                Log.w(TAG, "Launching app via getLaunchIntentForPackage failed: " + eL.getMessage());
+            }
+
+            // 6) Final fallback: open wa.me without forcing package
+            try {
+                Uri wa = Uri.parse("https://wa.me/" + clean);
+                Intent intent = new Intent(Intent.ACTION_VIEW, wa);
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                getActivity().startActivity(intent);
+                Log.w(TAG, "Fell back to wa.me");
+            } catch (Exception e3) {
+                Log.e(TAG, "wa.me fallback failed: " + e3.getMessage());
+            }
+
+            JSObject res = new JSObject();
+            res.put("success", false);
+            res.put("error", "All open attempts failed");
+            call.resolve(res);
+
+        } catch (Exception e) {
+            Log.e(TAG, "openWhatsApp unexpected error: " + e.getMessage());
+            JSObject res = new JSObject();
+            res.put("success", false);
+            res.put("error", e.getMessage());
+            call.resolve(res);
+        }
+    }
+
+    @PluginMethod
     public void initiateCall(PluginCall call) {
         String phoneNumber = call.getString("phoneNumber");
 

@@ -1,8 +1,10 @@
-import React, { useEffect } from 'react';
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import React, { useEffect, useRef, useState } from 'react';
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
-import { Box, CircularProgress, Typography } from '@mui/material';
+import { Box, CircularProgress, Typography, Snackbar } from '@mui/material';
 import { Helmet } from 'react-helmet-async';
+import { App as CapacitorApp } from '@capacitor/app';
+import { Capacitor } from '@capacitor/core';
 
 import { RootState, AppDispatch } from './store/store';
 import { validateAndRestoreSession } from './store/slices/authSlice';
@@ -53,9 +55,56 @@ const App: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
   const { isLoading, isAuthenticated } = useSelector((state: RootState) => state.auth);
   const location = useLocation();
+  const navigate = useNavigate();
+  const lastBackPressRef = useRef<number>(0);
+  const [exitToastOpen, setExitToastOpen] = useState(false);
   
   // Initialize session manager for automatic logout and session handling
   useSessionManager();
+
+  // Handle Android back button
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    let listenerHandle: { remove: () => void } | null = null;
+
+    const setupListener = async () => {
+      listenerHandle = await CapacitorApp.addListener('backButton', () => {
+        const currentPath = location.pathname;
+        
+        // If on dashboard, double-tap to exit
+        if (currentPath === '/dashboard' || currentPath === '/') {
+          const now = Date.now();
+          if (now - lastBackPressRef.current < 2000) {
+            // Double press within 2 seconds - exit app
+            CapacitorApp.exitApp();
+          } else {
+            // First press - show toast and wait for second press
+            lastBackPressRef.current = now;
+            setExitToastOpen(true);
+            // Vibrate for feedback
+            if (window.navigator && 'vibrate' in window.navigator) {
+              window.navigator.vibrate(50);
+            }
+          }
+        } else if (currentPath === '/login') {
+          // On login page, exit app
+          CapacitorApp.exitApp();
+        } else {
+          // On any other page, navigate to dashboard
+          navigate('/dashboard');
+        }
+      });
+    };
+
+    setupListener();
+
+    return () => {
+      if (listenerHandle) {
+        listenerHandle.remove();
+      }
+    };
+  }, [location.pathname, navigate]);
 
   useEffect(() => {
     // Try to restore session on app start, but skip while on login page to avoid needless refresh attempts
@@ -175,6 +224,16 @@ const App: React.FC = () => {
           }
         />
       </Routes>
+      
+      {/* Exit confirmation toast for Android back button */}
+      <Snackbar
+        open={exitToastOpen}
+        autoHideDuration={2000}
+        onClose={() => setExitToastOpen(false)}
+        message="Press back again to exit"
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        sx={{ bottom: { xs: 72, sm: 24 } }}
+      />
     </Box>
   );
 };

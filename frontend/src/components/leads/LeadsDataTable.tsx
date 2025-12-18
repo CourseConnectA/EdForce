@@ -80,6 +80,8 @@ import callsService from '@/services/callsService';
 import webSocketService from '@/services/webSocketService';
 import CallDispositionModal from '@/components/common/CallDispositionModal';
 import { Capacitor } from '@capacitor/core';
+import { openWhatsAppSystemChooser } from '@/services/whatsAppChooserService';
+// Custom WhatsAppChooserModal removed; using Android system chooser instead
 
 interface LeadsDataTableProps {
   onCreateLead?: () => void;
@@ -117,6 +119,8 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
   // Local state for filters
   const [searchTerm, setSearchTerm] = useState('');
   const [searchInput, setSearchInput] = useState('');
+  // Removed custom WhatsApp modal state; using system chooser
+  // Removed WhatsApp phone state; using direct system chooser instead
   const [statusFilter, setStatusFilter] = useState('');
   const [counselorFilter, setCounselorFilter] = useState('');
   const [sortModel, setSortModel] = useState<GridSortModel>([]);
@@ -196,9 +200,7 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
     currentNextFollowUpAt?: string;
   } | null>(null);
 
-  // WhatsApp chooser dialog state
-  const [whatsappDialogOpen, setWhatsappDialogOpen] = useState(false);
-  const [whatsappNumber, setWhatsappNumber] = useState('');
+  // WhatsApp chooser - no dialog needed, using native chooser
   const [callGuardOpen, setCallGuardOpen] = useState(false);
 
   // Track if pagination is ready for fetching (initialization complete)
@@ -695,61 +697,15 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
     void callsService.initiateCall(phoneNumber, leadId);
   };
 
-  // Handle WhatsApp icon click - show chooser dialog
+  // Handle WhatsApp icon click - use native chooser
   const handleWhatsAppClick = (phoneNumber: string) => {
     if (!phoneNumber) return;
-    // Clean phone number - remove spaces, dashes, parentheses
-    let cleanNumber = phoneNumber.replace(/[\s\-\(\)]/g, '');
-    // Remove leading + if present, wa.me handles it
-    if (cleanNumber.startsWith('+')) {
-      cleanNumber = cleanNumber.substring(1);
-    }
-    // If number doesn't start with country code, assume India (+91)
-    if (!cleanNumber.startsWith('91') && cleanNumber.length === 10) {
-      cleanNumber = '91' + cleanNumber;
-    }
-    setWhatsappNumber(cleanNumber);
-    setWhatsappDialogOpen(true);
+    // Directly trigger Android's default chooser via whatsapp:// scheme
+    void openWhatsAppSystemChooser(phoneNumber);
   };
 
-  // Open selected WhatsApp app
-  const openWhatsApp = (type: 'normal' | 'business') => {
-    setWhatsappDialogOpen(false);
-    if (!whatsappNumber) return;
-    
-    if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
-      // On Android, use intent URLs to open specific app
-      // Use dynamic anchor element approach to avoid WebView caching issues
-      const intentUrl = type === 'business'
-        ? `intent://send?phone=${whatsappNumber}#Intent;scheme=whatsapp;package=com.whatsapp.w4b;end`
-        : `intent://send?phone=${whatsappNumber}#Intent;scheme=whatsapp;package=com.whatsapp;end`;
-      
-      try {
-        const anchor = document.createElement('a');
-        anchor.href = intentUrl;
-        anchor.style.display = 'none';
-        // Add unique attribute to prevent any caching
-        anchor.setAttribute('data-whatsapp-timestamp', Date.now().toString());
-        anchor.setAttribute('data-whatsapp-number', whatsappNumber);
-        document.body.appendChild(anchor);
-        anchor.click();
-        // Clean up after a short delay
-        setTimeout(() => {
-          if (anchor.parentNode) {
-            anchor.parentNode.removeChild(anchor);
-          }
-        }, 100);
-      } catch (err) {
-        console.error('Failed to open WhatsApp via intent:', err);
-        // Fallback to location.href
-        window.location.href = intentUrl;
-      }
-    } else {
-      // On web/iOS, use wa.me (will open default WhatsApp)
-      // For business on web, there's no reliable way to force business app
-      window.open(`https://wa.me/${whatsappNumber}`, '_blank');
-    }
-  };
+  // Deprecated: custom chooser handler no longer used; system chooser is preferred
+  // Custom chooser handler removed
 
   // Handle actions menu
   const handleActionsClick = (event: React.MouseEvent<HTMLElement>, leadId: string) => {
@@ -2271,37 +2227,6 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
         </DialogActions>
       </Dialog>
 
-      {/* WhatsApp Chooser Dialog */}
-      <Dialog open={whatsappDialogOpen} onClose={() => setWhatsappDialogOpen(false)}>
-        <DialogTitle>Choose WhatsApp</DialogTitle>
-        <DialogContent>
-          <Typography sx={{ mb: 2 }}>Which WhatsApp would you like to use?</Typography>
-          <Stack spacing={2}>
-            <Button
-              variant="outlined"
-              fullWidth
-              startIcon={<WhatsAppIcon sx={{ color: '#25D366' }} />}
-              onClick={() => openWhatsApp('normal')}
-              sx={{ justifyContent: 'flex-start', py: 1.5 }}
-            >
-              WhatsApp
-            </Button>
-            <Button
-              variant="outlined"
-              fullWidth
-              startIcon={<WhatsAppIcon sx={{ color: '#128C7E' }} />}
-              onClick={() => openWhatsApp('business')}
-              sx={{ justifyContent: 'flex-start', py: 1.5 }}
-            >
-              WhatsApp Business
-            </Button>
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setWhatsappDialogOpen(false)}>Cancel</Button>
-        </DialogActions>
-      </Dialog>
-
       {/* Delete Confirmation Dialog */}
       <Dialog open={deleteDialogOpen} onClose={handleDeleteCancel} fullScreen={isMobile}>
         <DialogTitle>Delete Lead</DialogTitle>
@@ -2677,6 +2602,8 @@ const LeadsDataTable: React.FC<LeadsDataTableProps> = ({
           }));
         }}
       />
+
+      {/* System chooser is used; custom WhatsApp modal removed */}
     </Box>
   );
 };

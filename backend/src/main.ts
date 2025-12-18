@@ -49,19 +49,19 @@ async function bootstrap() {
     return false;
   };
 
-  // app.enableCors({
-  //   origin: (origin, callback) => {
-  //     if (isAllowedOrigin(origin)) {
-  //       callback(null, true);
-  //     } else {
-  //       console.log(`CORS blocked origin: ${origin}`);
-  //       callback(new Error('Not allowed by CORS'));
-  //     }
-  //   },
-  //   credentials: true,
-  //   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  //   allowedHeaders: ['Authorization', 'Content-Type', 'X-Requested-With', 'Accept', 'Origin'],
-  // });
+  app.enableCors({
+    origin: (origin, callback) => {
+      if (isAllowedOrigin(origin)) {
+        callback(null, true);
+      } else {
+        console.log(`CORS blocked origin: ${origin}`);
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Authorization', 'Content-Type', 'X-Requested-With', 'Accept', 'Origin'],
+  });
 
   // Global prefix
   app.setGlobalPrefix('api');

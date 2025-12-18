@@ -20,6 +20,10 @@ import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.List;
 import com.edforce.app.plugins.DialerPlugin;
+import com.edforce.app.plugins.WhatsAppChooserPlugin;
+import com.edforce.app.plugins.WhatsAppPlugin;
+import com.edforce.app.plugins.EdforceWhatsAppPlugin;
+import com.edforce.app.plugins.CallLogPlugin;
 
 public class MainActivity extends BridgeActivity {
     private static final String TAG = "NativeDialerBridge";
@@ -37,8 +41,11 @@ public class MainActivity extends BridgeActivity {
         super.onCreate(savedInstanceState);
 
         // Register our custom plugins
-        registerPlugin(CallLogSyncPlugin.class);
+        registerPlugin(CallLogPlugin.class);
         registerPlugin(DialerPlugin.class);
+        registerPlugin(WhatsAppChooserPlugin.class);
+        registerPlugin(WhatsAppPlugin.class);
+        registerPlugin(EdforceWhatsAppPlugin.class);
 
         telephonyManager = (TelephonyManager) getSystemService(TELEPHONY_SERVICE);
         phoneStateListener = new PhoneStateListener() {
@@ -86,6 +93,22 @@ public class MainActivity extends BridgeActivity {
 
         // Request all permissions together on app start
         requestAllPermissions();
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        // Ensure listeners are active after resume (or after changing permissions in Settings)
+        try {
+            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED) {
+                startListening();
+            }
+            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED) {
+                startIncomingCallMonitor();
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "onResume listener init failed: " + e.getMessage());
+        }
     }
 
     private void requestAllPermissions() {
