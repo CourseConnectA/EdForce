@@ -113,9 +113,22 @@ docker compose -f docker-compose.prod.yml --env-file .env.production run --rm --
 CERTBOT_EXIT=$?
 echo -e "${YELLOW}Certbot exit code: $CERTBOT_EXIT${NC}"
 
-# Check if certificates were created successfully
-if [ -d "deployment/certbot/conf/live/$DOMAIN" ]; then
-    echo -e "${GREEN}✓ SSL certificates obtained successfully!${NC}"
+# Treat a successful certbot exit as success; also double-check files appear
+if [ "$CERTBOT_EXIT" -eq 0 ]; then
+    # Some environments may have a tiny delay for the volume to flush
+    for i in 1 2 3 4 5; do
+        if [ -d "deployment/certbot/conf/live/$DOMAIN" ]; then
+            break
+        fi
+        sleep 1
+    done
+
+    if [ -d "deployment/certbot/conf/live/$DOMAIN" ]; then
+        echo -e "${GREEN}✓ SSL certificates obtained successfully!${NC}"
+    else
+        echo -e "${YELLOW}Warning: Certbot succeeded, but local cert path not found yet.${NC}"
+        echo -e "${YELLOW}Proceeding to reload nginx; it should see mounted certs.${NC}"
+    fi
     
     # Restore full SSL configuration
     echo -e "${GREEN}Restoring full SSL nginx configuration...${NC}"
