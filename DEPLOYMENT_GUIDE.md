@@ -182,26 +182,26 @@ Or manually:
 
 ```bash
 # Build all Docker images
-docker compose -f docker-compose.prod.yml build
+docker compose -f docker-compose.prod.yml --env-file .env.production build
 
 # Start all services
-docker compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml --env-file .env.production up -d
 
 # Run database migrations
-docker compose -f docker-compose.prod.yml exec backend npm run migration:run
+docker compose -f docker-compose.prod.yml --env-file .env.production exec backend npm run migration:run:prod
 
 # Check status
-docker compose -f docker-compose.prod.yml ps
+docker compose -f docker-compose.prod.yml --env-file .env.production ps
 ```
 
 ### Step 7: Verify Deployment
 
 ```bash
 # Check all containers are running
-docker compose -f docker-compose.prod.yml ps
+docker compose -f docker-compose.prod.yml --env-file .env.production ps
 
 # View logs
-docker compose -f docker-compose.prod.yml logs -f
+docker compose -f docker-compose.prod.yml --env-file .env.production logs -f
 
 # Test the API
 curl https://api.edforce.live/api/health
@@ -242,23 +242,23 @@ CORS is configured in both the backend and Nginx to allow:
 
 ```bash
 # All services
-docker compose -f docker-compose.prod.yml logs -f
+docker compose -f docker-compose.prod.yml --env-file .env.production logs -f
 
 # Specific service
-docker compose -f docker-compose.prod.yml logs -f backend
-docker compose -f docker-compose.prod.yml logs -f frontend
-docker compose -f docker-compose.prod.yml logs -f nginx
-docker compose -f docker-compose.prod.yml logs -f postgres
+docker compose -f docker-compose.prod.yml --env-file .env.production logs -f backend
+docker compose -f docker-compose.prod.yml --env-file .env.production logs -f frontend
+docker compose -f docker-compose.prod.yml --env-file .env.production logs -f nginx
+docker compose -f docker-compose.prod.yml --env-file .env.production logs -f postgres
 ```
 
 ### Restart Services
 
 ```bash
 # Restart all
-docker compose -f docker-compose.prod.yml restart
+docker compose -f docker-compose.prod.yml --env-file .env.production restart
 
 # Restart specific service
-docker compose -f docker-compose.prod.yml restart backend
+docker compose -f docker-compose.prod.yml --env-file .env.production restart backend
 ```
 
 ### Update Application
@@ -275,10 +275,10 @@ git pull origin main
 
 ```bash
 # Create backup
-docker compose -f docker-compose.prod.yml exec postgres pg_dump -U edforce_user edforce_db > backup_$(date +%Y%m%d).sql
+docker compose -f docker-compose.prod.yml --env-file .env.production exec postgres pg_dump -U edforce_user edforce_db > backup_$(date +%Y%m%d).sql
 
 # Restore backup
-cat backup_20231215.sql | docker compose -f docker-compose.prod.yml exec -T postgres psql -U edforce_user edforce_db
+cat backup_20231215.sql | docker compose -f docker-compose.prod.yml --env-file .env.production exec -T postgres psql -U edforce_user edforce_db
 ```
 
 ### SSL Certificate Renewal
@@ -287,7 +287,7 @@ Certificates auto-renew via the certbot container. To manually renew:
 
 ```bash
 docker compose -f docker-compose.prod.yml run --rm certbot renew
-docker compose -f docker-compose.prod.yml exec nginx nginx -s reload
+docker compose -f docker-compose.prod.yml --env-file .env.production exec nginx nginx -s reload
 ```
 
 ## 🛡️ Security Checklist
@@ -307,17 +307,17 @@ docker compose -f docker-compose.prod.yml exec nginx nginx -s reload
 
 ```bash
 # Check container logs
-docker compose -f docker-compose.prod.yml logs backend
+docker compose -f docker-compose.prod.yml --env-file .env.production logs backend
 
 # Check container status
-docker compose -f docker-compose.prod.yml ps -a
+docker compose -f docker-compose.prod.yml --env-file .env.production ps -a
 ```
 
 ### Database Connection Issues
 
 ```bash
 # Check PostgreSQL is running
-docker compose -f docker-compose.prod.yml exec postgres pg_isready
+docker compose -f docker-compose.prod.yml --env-file .env.production exec postgres pg_isready
 
 # Test connection
 docker compose -f docker-compose.prod.yml exec backend node -e "const { Client } = require('pg'); const c = new Client({host:'postgres',user:'edforce_user',password:'YOUR_PASSWORD',database:'edforce_db'}); c.connect().then(()=>console.log('Connected!')).catch(e=>console.error(e))"
@@ -350,11 +350,11 @@ Usually means the backend isn't running:
 
 ```bash
 # Check backend status
-docker compose -f docker-compose.prod.yml ps backend
-docker compose -f docker-compose.prod.yml logs backend
+docker compose -f docker-compose.prod.yml --env-file .env.production ps backend
+docker compose -f docker-compose.prod.yml --env-file .env.production logs backend
 
 # Restart backend
-docker compose -f docker-compose.prod.yml restart backend
+docker compose -f docker-compose.prod.yml --env-file .env.production restart backend
 ```
 
 ## 📁 Directory Structure
@@ -388,20 +388,20 @@ docker compose -f docker-compose.prod.yml restart backend
 ./deployment/deploy.sh
 
 # View status
-docker compose -f docker-compose.prod.yml ps
+docker compose -f docker-compose.prod.yml --env-file .env.production ps
 
 # View logs
-docker compose -f docker-compose.prod.yml logs -f
+docker compose -f docker-compose.prod.yml --env-file .env.production logs -f
 
 # Stop all
 docker compose -f docker-compose.prod.yml down
 
 # Restart all
-docker compose -f docker-compose.prod.yml restart
+docker compose -f docker-compose.prod.yml --env-file .env.production restart
 
 # Shell into container
-docker compose -f docker-compose.prod.yml exec backend sh
-docker compose -f docker-compose.prod.yml exec postgres psql -U edforce_user edforce_db
+docker compose -f docker-compose.prod.yml --env-file .env.production exec backend sh
+docker compose -f docker-compose.prod.yml --env-file .env.production exec postgres psql -U edforce_user edforce_db
 
 # Update and redeploy
 git pull && ./deployment/deploy.sh

@@ -55,7 +55,7 @@ docker compose -f docker-compose.prod.yml up -d
 echo ""
 echo -e "${BLUE}Step 5: Waiting for services to be healthy...${NC}"
 echo "Waiting for PostgreSQL..."
-until docker compose -f docker-compose.prod.yml exec -T postgres pg_isready -U ${DATABASE_USERNAME:-postgres} > /dev/null 2>&1; do
+until docker compose -f docker-compose.prod.yml exec -T postgres pg_isready -U ${DATABASE_USERNAME:-postgres} -d ${DATABASE_NAME:-edforce_db} > /dev/null 2>&1; do
     sleep 2
 done
 echo -e "${GREEN}✓ PostgreSQL is ready${NC}"
@@ -73,9 +73,9 @@ until docker compose -f docker-compose.prod.yml exec -T backend wget -q --spider
 done
 echo -e "${GREEN}✓ Backend is ready${NC}"
 
-echo ""
+echo "" 
 echo -e "${BLUE}Step 6: Running database migrations...${NC}"
-docker compose -f docker-compose.prod.yml exec -T backend npm run migration:run || echo -e "${YELLOW}Warning: Migrations may have already been applied${NC}"
+docker compose -f docker-compose.prod.yml exec -T backend npm run migration:run:prod || echo -e "${YELLOW}Warning: Migrations may have already been applied${NC}"
 
 echo ""
 echo -e "${BLUE}Step 7: Checking service status...${NC}"
