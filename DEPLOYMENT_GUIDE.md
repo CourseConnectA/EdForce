@@ -129,6 +129,8 @@ nano .env.production
 DATABASE_NAME=edforce_db
 DATABASE_USERNAME=edforce_user
 DATABASE_PASSWORD=YOUR_SUPER_SECURE_DATABASE_PASSWORD_HERE
+# Use SSL only for managed/external DBs (not Docker internal)
+DATABASE_SSL=false
 
 # Redis - Use a strong password!
 REDIS_PASSWORD=YOUR_SUPER_SECURE_REDIS_PASSWORD_HERE

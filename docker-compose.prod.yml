@@ -73,6 +73,7 @@ services:
       - DATABASE_USERNAME=${DATABASE_USERNAME:-postgres}
       - DATABASE_PASSWORD=${DATABASE_PASSWORD}
       - DATABASE_NAME=${DATABASE_NAME:-edforce_db}
+      - DATABASE_SSL=${DATABASE_SSL:-false}
       - DATABASE_URL=postgresql://${DATABASE_USERNAME:-postgres}:${DATABASE_PASSWORD}@postgres:5432/${DATABASE_NAME:-edforce_db}
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
       - REDIS_HOST=redis

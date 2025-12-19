@@ -4,6 +4,8 @@ import * as path from 'path';
 
 config();
 
+const useSSL = (process.env.DATABASE_SSL || '').toLowerCase() === 'true';
+
 export const dataSourceOptions: DataSourceOptions = {
   type: 'postgres',
   host: process.env.DATABASE_HOST || 'localhost',
@@ -15,7 +17,7 @@ export const dataSourceOptions: DataSourceOptions = {
   migrations: [path.join(__dirname, '/migrations/*{.ts,.js}')],
   synchronize: false,
   logging: process.env.NODE_ENV === 'development',
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  ssl: useSSL ? { rejectUnauthorized: false } : false,
   // Connection pooling for production scalability (handles 50-100+ concurrent users)
   extra: {
     max: parseInt(process.env.DATABASE_POOL_MAX || '50'),          // Maximum connections in pool
