@@ -23,6 +23,7 @@
     "migration:revert": "npm run build && npx typeorm migration:revert -d dist/database/data-source.js",
     "migration:run:prod": "npx typeorm migration:run -d dist/database/data-source.js",
     "migration:revert:prod": "npx typeorm migration:revert -d dist/database/data-source.js",
+    "migration:baseline:prod": "node tools/migration-baseline.js",
     "seed": "ts-node src/database/seeds/seed.ts"
   },
   "dependencies": {

@@ -325,6 +325,26 @@ docker compose -f docker-compose.prod.yml --env-file .env.production exec postgr
 docker compose -f docker-compose.prod.yml exec backend node -e "const { Client } = require('pg'); const c = new Client({host:'postgres',user:'edforce_user',password:'YOUR_PASSWORD',database:'edforce_db'}); c.connect().then(()=>console.log('Connected!')).catch(e=>console.error(e))"
 ```
 
+### Migration Conflicts After Schema Sync
+
+If you initialized the database using a one-time `schema:sync` and then see migration errors like:
+
+```
+QueryFailedError: column "shared_to" of relation "reports" already exists
+```
+
+This means the schema already contains changes that a migration tries to apply. Baseline the pending migrations (mark them as executed without running):
+
+```bash
+# Mark all pending migrations as executed (no-op) inside backend container
+docker compose -f docker-compose.prod.yml --env-file .env.production exec backend node tools/migration-baseline.js
+
+# Verify there are no pending migrations
+docker compose -f docker-compose.prod.yml --env-file .env.production exec backend npm run migration:run:prod
+```
+
+Tip: On a fresh database, prefer running migrations only. Use `schema:sync` only for a one-time bootstrap, followed by the baseline step above.
+
 ### SSL Certificate Issues
 
 ```bash
